@@ -748,7 +748,7 @@ impl App {
                 let home = self.project_homes.get(i).cloned().unwrap_or_default();
                 let base = self.project_home_bases.get(i).cloned().unwrap_or_default();
                 targets.push(MoveTarget {
-                    label: format!("{cwd}  ⟨{home}⟩"),
+                    label: format!("{}  ⟨{home}⟩", humanize_path(cwd)),
                     cwd: cwd.clone(),
                     home_base: base,
                 });
@@ -1146,6 +1146,21 @@ fn extract_text(content: Option<&Value>) -> String {
         }
         _ => "(contenu absent)".to_string(),
     }
+}
+
+/// Raccourcit un chemin pour l'affichage : remplace le `$HOME` de tête par `~`.
+pub fn humanize_path(p: &str) -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            if p == home {
+                return "~".to_string();
+            }
+            if let Some(rest) = p.strip_prefix(&format!("{home}/")) {
+                return format!("~/{rest}");
+            }
+        }
+    }
+    p.to_string()
 }
 
 /// Formate une taille en octets de façon lisible (Kio/Mio).

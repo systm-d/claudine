@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 use super::app::{App, BrowseView, Focus, PickerMode, Section};
-use crate::tui::app::human_size;
+use crate::tui::app::{human_size, humanize_path};
 use claudine_core::scan_projects;
 
 const ACCENT: Color = Color::Cyan;
@@ -150,6 +150,8 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
 
     // --- Projets ---
     let projects_focused = app.focus == Focus::Projects;
+    // Largeur utile (bordures + symbole de surbrillance retranchés).
+    let avail = (cols[0].width as usize).saturating_sub(4);
     // En vue agrégée, un en-tête par home regroupe ses projets (qui sont déjà
     // contigus par home) ; sinon, simple liste plate. `row_of_project[i]` donne
     // la ligne d'affichage du projet i (les en-têtes décalent les indices).
@@ -173,12 +175,17 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
             }
         }
         row_of_project.push(proj_items.len());
-        let label = p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone());
+        let raw = humanize_path(&p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone()));
         let count = p.sessions.len();
+        let suffix = format!("  ({count} sess.)");
+        let indent_w = if app.aggregate { 2 } else { 0 };
+        // Garde la fin du chemin (le nom du projet) en tronquant par la gauche.
+        let budget = avail.saturating_sub(indent_w + suffix.chars().count());
+        let shown = truncate_left(&raw, budget);
         let indent = if app.aggregate { "  " } else { "" };
         proj_items.push(ListItem::new(Line::from(vec![
-            Span::raw(format!("{indent}{label}")),
-            Span::styled(format!("  ({count} sess.)"), Style::default().fg(DIM)),
+            Span::raw(format!("{indent}{shown}")),
+            Span::styled(suffix, Style::default().fg(DIM)),
         ])));
     }
     let proj_list = List::new(proj_items)
@@ -221,7 +228,7 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
 
     let title = match app.selected_project() {
         Some(p) => {
-            let name = p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone());
+            let name = humanize_path(&p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone()));
             format!(" Sessions — {name} ")
         }
         None => " Sessions ".to_string(),
@@ -249,7 +256,7 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
 fn render_transcript(app: &mut App, f: &mut Frame, area: Rect) {
     let (proj_name, sess_id) = match (app.selected_project(), app.selected_session()) {
         (Some(p), Some(s)) => {
-            let name = p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone());
+            let name = humanize_path(&p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone()));
             (name, s.id.chars().take(8).collect::<String>())
         }
         _ => ("?".to_string(), "?".to_string()),
@@ -919,6 +926,19 @@ fn key_hints(pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
         ));
     }
     spans
+}
+
+/// Tronque par la **gauche** (garde la fin, la plus distinctive) avec un `…`.
+fn truncate_left(s: &str, max: usize) -> String {
+    let count = s.chars().count();
+    if count <= max {
+        return s.to_string();
+    }
+    if max <= 1 {
+        return "…".to_string();
+    }
+    let tail: String = s.chars().skip(count - (max - 1)).collect();
+    format!("…{tail}")
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
