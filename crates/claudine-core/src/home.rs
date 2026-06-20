@@ -65,9 +65,12 @@ mod tests {
 
     #[test]
     fn discover_respects_env() {
+        // CLAUDE_CONFIG_DIR est global au process : on capture le résultat et on
+        // retire la variable AVANT l'assertion, pour ne pas la laisser fuiter si
+        // l'assertion panique (teardown-on-panic).
         std::env::set_var("CLAUDE_CONFIG_DIR", "/custom/dir");
-        let h = ClaudeHome::discover().unwrap();
-        assert_eq!(h.base, std::path::Path::new("/custom/dir"));
+        let base = ClaudeHome::discover().unwrap().base;
         std::env::remove_var("CLAUDE_CONFIG_DIR");
+        assert_eq!(base, std::path::Path::new("/custom/dir"));
     }
 }
