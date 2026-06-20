@@ -32,3 +32,4 @@ Task 9: complete (commits 4d60653..24463fe, review clean après retrait allow(de
 Task 10: complete (commits 24463fe..ab0904b, re-review opus clean; faille HIGH tar-slip corrigée + newline + backup testé + apply ré-exporté)
 Task 11: complete (commit a1db717, 2 CLI integration tests pass, 21 core tests pass, 0 clippy warnings)
 Task 11: complete (commits ab0904b..e1db2c1, review clean; +test parse_maps)
+TUI: complete (commit b6e719c — ratatui, browse/transcript/mémoire/config/export; Cargo.lock versionné)
