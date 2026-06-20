@@ -97,6 +97,10 @@ pub struct App {
 
     // --- Browse ---
     pub projects: Vec<Project>,
+    /// Label du home d'origine de chaque projet (aligné sur `projects`).
+    pub project_homes: Vec<String>,
+    /// Vue agrégée : projets de tous les homes à la fois.
+    pub aggregate: bool,
     pub browse_view: BrowseView,
     pub focus: Focus,
     pub project_idx: usize,
@@ -140,6 +144,7 @@ impl App {
 
         let home = &homes[0];
         let projects = scan_projects(home).unwrap_or_default();
+        let project_homes = vec![home.label.clone(); projects.len()];
         let memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
         let config_lines = build_config_lines(home);
         let settings = SettingsForm::load(home);
@@ -154,6 +159,8 @@ impl App {
             picker_idx: 0,
             picker_mode: PickerMode::List,
             projects,
+            project_homes,
+            aggregate: false,
             browse_view: BrowseView::List,
             focus: Focus::Projects,
             project_idx: 0,
@@ -176,6 +183,15 @@ impl App {
     /// Home actuellement active.
     pub fn home(&self) -> &ClaudeHome {
         &self.homes[self.active]
+    }
+
+    /// Libellé du contexte courant (home actif, ou « tous les homes » en agrégé).
+    pub fn active_label(&self) -> String {
+        if self.aggregate {
+            format!("tous les homes ({})", self.homes.len())
+        } else {
+            self.homes[self.active].label.clone()
+        }
     }
 
     pub fn selected_project(&self) -> Option<&Project> {
@@ -513,7 +529,8 @@ impl App {
     pub fn open_picker(&mut self) {
         self.show_picker = true;
         self.picker_mode = PickerMode::List;
-        self.picker_idx = self.active;
+        // Index 0 = « Tous les homes » ; les homes suivent à partir de 1.
+        self.picker_idx = if self.aggregate { 0 } else { self.active + 1 };
     }
 
     /// Ferme le sélecteur (et annule une éventuelle saisie en cours).
@@ -526,14 +543,37 @@ impl App {
         if self.picker_mode != PickerMode::List {
             return;
         }
-        self.picker_idx = step(self.picker_idx, delta, self.homes.len());
+        // +1 pour l'entrée « Tous les homes ».
+        self.picker_idx = step(self.picker_idx, delta, self.homes.len() + 1);
+    }
+
+    /// (Re)construit la liste des projets : home actif seul, ou tous les homes
+    /// concaténés (mode agrégé), chaque projet étiqueté par son home.
+    fn reload_projects(&mut self) {
+        let mut projects = Vec::new();
+        let mut project_homes = Vec::new();
+        let homes: Vec<&ClaudeHome> = if self.aggregate {
+            self.homes.iter().collect()
+        } else {
+            vec![&self.homes[self.active]]
+        };
+        for h in homes {
+            if let Ok(ps) = scan_projects(h) {
+                for p in ps {
+                    project_homes.push(h.label.clone());
+                    projects.push(p);
+                }
+            }
+        }
+        self.projects = projects;
+        self.project_homes = project_homes;
     }
 
     /// Recharge projets / mémoire / config pour la home active et réinitialise
     /// les sélections et défilements.
     fn reload_active(&mut self) {
+        self.reload_projects();
         let home = self.homes[self.active].clone();
-        self.projects = scan_projects(&home).unwrap_or_default();
         self.memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
         self.config_lines = build_config_lines(&home);
         self.settings = SettingsForm::load(&home);
@@ -553,9 +593,16 @@ impl App {
         if self.picker_mode != PickerMode::List {
             return;
         }
-        if self.picker_idx < self.homes.len() {
-            let label = self.homes[self.picker_idx].label.clone();
-            self.active = self.picker_idx;
+        if self.picker_idx == 0 {
+            // « Tous les homes » : vue agrégée.
+            self.aggregate = true;
+            self.reload_active();
+            self.status = Some(format!("Tous les homes ({})", self.homes.len()));
+        } else if self.picker_idx - 1 < self.homes.len() {
+            let i = self.picker_idx - 1;
+            let label = self.homes[i].label.clone();
+            self.aggregate = false;
+            self.active = i;
             self.reload_active();
             self.status = Some(format!("Home active : {label}"));
         }
@@ -565,7 +612,10 @@ impl App {
     /// Indique si la home surlignée est enregistrée dans la config (donc
     /// retirable), par comparaison de chemin canonique.
     pub fn picker_highlight_is_registered(&self) -> bool {
-        let Some(home) = self.homes.get(self.picker_idx) else {
+        if self.picker_idx == 0 {
+            return false; // « Tous les homes »
+        }
+        let Some(home) = self.homes.get(self.picker_idx - 1) else {
             return false;
         };
         let config = ClaudineConfig::load();
@@ -635,7 +685,7 @@ impl App {
             .position(|h| canonical(&h.base) == key)
             .unwrap_or(self.active.min(self.homes.len().saturating_sub(1)));
         self.reload_active();
-        self.picker_idx = self.active;
+        self.picker_idx = self.active + 1;
         self.picker_mode = PickerMode::List;
         self.status = Some(format!("Home ajoutée : {label}"));
     }
@@ -646,7 +696,11 @@ impl App {
         if self.picker_mode != PickerMode::List {
             return;
         }
-        let Some(home) = self.homes.get(self.picker_idx) else {
+        if self.picker_idx == 0 {
+            self.status = Some("« Tous les homes » n'est pas supprimable".to_string());
+            return;
+        }
+        let Some(home) = self.homes.get(self.picker_idx - 1) else {
             return;
         };
         if !self.picker_highlight_is_registered() {
@@ -686,7 +740,7 @@ impl App {
                 .unwrap_or(0)
         };
         self.reload_active();
-        self.picker_idx = self.picker_idx.min(self.homes.len().saturating_sub(1));
+        self.picker_idx = self.picker_idx.min(self.homes.len());
         self.status = Some(format!("Home retirée : {label}"));
     }
 }
@@ -1004,17 +1058,33 @@ mod tests {
 
         app.open_picker();
         assert!(app.show_picker);
-        assert_eq!(app.picker_idx, 0);
-
-        // Descend sur la 2e home puis sélectionne.
-        app.picker_move(1);
+        // Index 0 = « Tous les homes » ; le home actif (0) est donc à l'entrée 1.
         assert_eq!(app.picker_idx, 1);
+
+        // Descend sur la 2e home (entrée 2) puis sélectionne.
+        app.picker_move(1);
+        assert_eq!(app.picker_idx, 2);
         app.picker_select();
         assert!(!app.show_picker);
         assert_eq!(app.active, 1);
+        assert!(!app.aggregate);
         // La home b a un projet → l'app n'est plus vide après reload.
         assert!(!app.is_empty());
         assert!(app.status.as_deref().unwrap().contains("Home active"));
+    }
+
+    #[test]
+    fn picker_select_all_homes_aggregates() {
+        let (_d, homes) = two_homes();
+        let mut app = App::with_homes(homes);
+        app.open_picker();
+        app.picker_idx = 0; // « Tous les homes »
+        app.picker_select();
+        assert!(app.aggregate);
+        // Agrégé : projets des deux homes (a vide + b avec 1 projet).
+        assert_eq!(app.projects.len(), 1);
+        assert_eq!(app.project_homes.len(), app.projects.len());
+        assert!(app.status.as_deref().unwrap().contains("Tous les homes"));
     }
 
     #[test]

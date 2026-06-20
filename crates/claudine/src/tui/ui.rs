@@ -66,7 +66,7 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
         .iter()
         .map(|s| Line::from(format!(" {} ", s.title())))
         .collect::<Vec<_>>();
-    let title = format!(" Claudine · {} ", app.home().label);
+    let title = format!(" Claudine · {} ", app.active_label());
     let tabs = Tabs::new(titles)
         .block(
             Block::default()
@@ -139,16 +139,24 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
     let proj_items: Vec<ListItem> = app
         .projects
         .iter()
-        .map(|p| {
+        .enumerate()
+        .map(|(i, p)| {
             let label = p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone());
             let count = p.sessions.len();
-            ListItem::new(Line::from(vec![
+            let mut spans = vec![
                 Span::raw(label),
-                Span::styled(
-                    format!("  ({count} sess.)"),
-                    Style::default().fg(DIM),
-                ),
-            ]))
+                Span::styled(format!("  ({count} sess.)"), Style::default().fg(DIM)),
+            ];
+            // En vue agrégée, indique le home d'origine du projet.
+            if app.aggregate {
+                if let Some(h) = app.project_homes.get(i) {
+                    spans.push(Span::styled(
+                        format!("  ⟨{h}⟩"),
+                        Style::default().fg(ACCENT),
+                    ));
+                }
+            }
+            ListItem::new(Line::from(spans))
         })
         .collect();
     let proj_list = List::new(proj_items)
@@ -651,26 +659,38 @@ fn render_picker(app: &App, f: &mut Frame, area: Rect) {
         (inner, None)
     };
 
-    let items: Vec<ListItem> = app
-        .homes
-        .iter()
-        .enumerate()
-        .map(|(i, h)| {
-            let n = scan_projects(h).map(|p| p.len()).unwrap_or(0);
-            let mark = if i == app.active { "● " } else { "  " };
-            ListItem::new(Line::from(vec![
-                Span::styled(
-                    mark,
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(h.label.clone()),
-                Span::styled(
-                    format!("  ({n} projets)"),
-                    Style::default().fg(DIM),
-                ),
-            ]))
-        })
-        .collect();
+    let mut items: Vec<ListItem> = Vec::new();
+    // Entrée agrégée « Tous les homes » en tête (index 0).
+    {
+        let mark = if app.aggregate { "● " } else { "  " };
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled(
+                mark,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("★ Tous les homes", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("  ({} homes)", app.homes.len()),
+                Style::default().fg(DIM),
+            ),
+        ])));
+    }
+    for (i, h) in app.homes.iter().enumerate() {
+        let n = scan_projects(h).map(|p| p.len()).unwrap_or(0);
+        let mark = if !app.aggregate && i == app.active {
+            "● "
+        } else {
+            "  "
+        };
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled(
+                mark,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(h.label.clone()),
+            Span::styled(format!("  ({n} projets)"), Style::default().fg(DIM)),
+        ])));
+    }
 
     let list = List::new(items)
         .highlight_style(
@@ -681,7 +701,7 @@ fn render_picker(app: &App, f: &mut Frame, area: Rect) {
         )
         .highlight_symbol("▶ ");
     let mut state = ListState::default();
-    state.select(Some(app.picker_idx.min(app.homes.len().saturating_sub(1))));
+    state.select(Some(app.picker_idx.min(app.homes.len())));
     f.render_stateful_widget(list, list_area, &mut state);
 
     if let (Some(input_area), PickerMode::AddInput(buf)) = (input_area, &app.picker_mode) {
