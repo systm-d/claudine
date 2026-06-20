@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/claudine-core", "crates/claudine"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.74"
+version = "0.1.0"
