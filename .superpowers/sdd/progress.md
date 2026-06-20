@@ -34,3 +34,4 @@ Task 11: complete (commit a1db717, 2 CLI integration tests pass, 21 core tests p
 Task 11: complete (commits ab0904b..e1db2c1, review clean; +test parse_maps)
 TUI: complete (commit b6e719c — ratatui, browse/transcript/mémoire/config/export; Cargo.lock versionné)
 Multi-home: complete (commits 8e52fb7, 02f194d, f1074e8) — discover_homes + config Claudine (~/.config/claudine/config.json) + CLI --home/homes add|remove + sélecteur TUI (H, ajout/retrait). 53 tests verts.
+Settings form: complete (commits 524dc81 cœur, b35a886 TUI) — section Config éditable via formulaire, préserve clés inconnues, bascule JSON brut. 62 tests verts, clippy clean.
