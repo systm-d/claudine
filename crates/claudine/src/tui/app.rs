@@ -494,6 +494,25 @@ impl App {
         }
     }
 
+    /// En vue agrégée, change le home **cible** de Mémoire/Config (sans quitter
+    /// l'agrégat ni toucher la liste fusionnée des projets).
+    pub fn cycle_config_target(&mut self) {
+        if !self.aggregate
+            || self.homes.len() < 2
+            || !matches!(self.section, Section::Memory | Section::Config)
+        {
+            return;
+        }
+        self.active = (self.active + 1) % self.homes.len();
+        let home = self.homes[self.active].clone();
+        self.memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
+        self.config_lines = build_config_lines(&home);
+        self.settings = SettingsForm::load(&home);
+        self.memory_scroll = 0;
+        self.config_scroll = 0;
+        self.status = Some(format!("Cible Mémoire/Config : {}", home.label));
+    }
+
     // --- Export ---
 
     /// Exporte ~/.claude vers `<HOME>/claudine-export-<unix>.tar.gz`.
@@ -1071,6 +1090,24 @@ mod tests {
         // La home b a un projet → l'app n'est plus vide après reload.
         assert!(!app.is_empty());
         assert!(app.status.as_deref().unwrap().contains("Home active"));
+    }
+
+    #[test]
+    fn cycle_config_target_in_aggregate_changes_active_only() {
+        let (_d, homes) = two_homes();
+        let mut app = App::with_homes(homes);
+        app.open_picker();
+        app.picker_idx = 0;
+        app.picker_select(); // → agrégé
+        assert!(app.aggregate);
+        let before = app.active;
+        let proj_count = app.projects.len();
+
+        app.set_section(Section::Config);
+        app.cycle_config_target();
+        assert_ne!(app.active, before, "la cible doit changer");
+        assert!(app.aggregate, "doit rester en agrégé");
+        assert_eq!(app.projects.len(), proj_count, "liste fusionnée inchangée");
     }
 
     #[test]

@@ -125,6 +125,8 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         // Section Config : enregistrer / basculer vers le JSON brut.
         KeyCode::Char('s') => app.save_settings(),
         KeyCode::Char('r') => app.toggle_settings_raw(),
+        // En vue agrégée : changer le home cible de Mémoire/Config.
+        KeyCode::Char('t') => app.cycle_config_target(),
 
         // Sélection directe de section.
         KeyCode::Char('1') => app.set_section(Section::Browse),

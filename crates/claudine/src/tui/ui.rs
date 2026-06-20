@@ -34,14 +34,21 @@ pub fn render(app: &mut App, f: &mut Frame) {
 
     match app.section {
         Section::Browse => render_browse(app, f, chunks[1]),
-        Section::Memory => render_scroll_pane(
-            f,
-            chunks[1],
-            "Mémoire — ~/.claude/CLAUDE.md",
-            &app.memory_lines,
-            app.memory_scroll,
-            &mut app.memory_viewport,
-        ),
+        Section::Memory => {
+            let title = if app.aggregate {
+                format!("Mémoire · {} — CLAUDE.md  (t: cible)", app.home().label)
+            } else {
+                "Mémoire — ~/.claude/CLAUDE.md".to_string()
+            };
+            render_scroll_pane(
+                f,
+                chunks[1],
+                &title,
+                &app.memory_lines,
+                app.memory_scroll,
+                &mut app.memory_viewport,
+            )
+        }
         Section::Config => render_config(app, f, chunks[1]),
     }
 
@@ -313,10 +320,15 @@ fn render_scroll_pane(
 fn render_config(app: &mut App, f: &mut Frame, area: Rect) {
     if app.settings.raw() {
         let lines = app.settings.raw_lines();
+        let title = if app.aggregate {
+            format!("Config · {} — settings.json (brut · r: formulaire)", app.home().label)
+        } else {
+            "Config — settings.json (brut · r: formulaire)".to_string()
+        };
         render_scroll_pane(
             f,
             area,
-            "Config — settings.json (brut · r: formulaire)",
+            &title,
             &lines,
             app.config_scroll,
             &mut app.config_viewport,
@@ -330,20 +342,25 @@ fn render_config(app: &mut App, f: &mut Frame, area: Rect) {
 /// champ surligné (avec saisie en ligne pour les champs scalaires).
 fn render_settings_form(app: &mut App, f: &mut Frame, area: Rect) {
     let dirty = app.settings.dirty();
+    let title = if app.aggregate {
+        format!(" Config · {} — settings.json ", app.home().label)
+    } else {
+        " Config — settings.json ".to_string()
+    };
+    let right = if dirty {
+        " ● modifié · s enregistrer · r JSON ".to_string()
+    } else if app.aggregate {
+        " t cible · s enregistrer · r JSON ".to_string()
+    } else {
+        " s enregistrer · r JSON brut ".to_string()
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .title(Span::styled(
-            " Config — settings.json ",
+            title,
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ))
-        .title(
-            Line::from(if dirty {
-                " ● modifié · s enregistrer · r JSON "
-            } else {
-                " s enregistrer · r JSON brut "
-            })
-            .right_aligned(),
-        );
+        .title(Line::from(right).right_aligned());
     let inner = block.inner(area);
     f.render_widget(block, area);
     let viewport = inner.height as usize;
@@ -568,6 +585,14 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("?", "aide"),
             ("q", "quitter"),
         ]),
+        Section::Memory if app.aggregate => key_hints(&[
+            ("Tab/1·2·3", "sections"),
+            ("↑/↓ PgUp/Dn", "défiler"),
+            ("t", "cible"),
+            ("H", "homes"),
+            ("?", "aide"),
+            ("q", "quitter"),
+        ]),
         _ => key_hints(&[
             ("Tab/1·2·3", "sections"),
             ("↑/↓", "défiler"),
@@ -601,7 +626,8 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("Home / End", "aller au début / à la fin"),
         ("e", "exporter ~/.claude en .tar.gz"),
         ("Config", "↑↓ champ · Enter éditer · ←→ option · s enregistrer · r JSON"),
-        ("H", "sélecteur de home (a ajouter / d retirer)"),
+        ("H", "homes : ★ Tous les homes (agrégé) / un home précis"),
+        ("t", "en agrégé : changer le home cible de Mémoire/Config"),
         ("?", "afficher/masquer cette aide"),
         ("q / Ctrl-C", "quitter"),
     ];
