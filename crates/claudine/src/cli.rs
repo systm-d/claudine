@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use claudine_core::{
-    apply, discover_homes, dry_run, export, scan_projects, ClaudeHome, ExportOptions,
-    ImportOptions, RemapRule, RemapTable, Report,
+    apply, discover_homes, dry_run, export, scan_projects, ClaudeHome, ClaudineConfig,
+    ExportOptions, ImportOptions, RemapRule, RemapTable, Report,
 };
 
 pub fn parse_maps(maps: &[String]) -> Result<RemapTable, String> {
@@ -77,6 +77,36 @@ pub fn run_homes() -> Result<(), String> {
             home.base.display()
         );
     }
+    Ok(())
+}
+
+/// Enregistre une home dans la config Claudine puis sauvegarde.
+pub fn run_homes_add(path: PathBuf, label: Option<String>) -> Result<(), String> {
+    if !path.is_dir() {
+        return Err(format!(
+            "le chemin « {} » n'est pas un répertoire existant",
+            path.display()
+        ));
+    }
+    let mut config = ClaudineConfig::load();
+    config.add_home(label.unwrap_or_default(), path.clone());
+    config.save().map_err(|e| e.to_string())?;
+    println!("Home enregistrée : {}", path.display());
+    Ok(())
+}
+
+/// Retire une home enregistrée de la config Claudine puis sauvegarde.
+pub fn run_homes_remove(label: String) -> Result<(), String> {
+    let mut config = ClaudineConfig::load();
+    let before = config.homes.len();
+    config.remove_home(&label);
+    if config.homes.len() == before {
+        return Err(format!(
+            "aucune home enregistrée nommée « {label} » (seules les homes enregistrées sont retirables)"
+        ));
+    }
+    config.save().map_err(|e| e.to_string())?;
+    println!("Home retirée : {label}");
     Ok(())
 }
 

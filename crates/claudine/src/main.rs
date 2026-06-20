@@ -37,8 +37,28 @@ enum Command {
         #[arg(long)]
         home: Option<String>,
     },
-    /// Liste les homes Claude découvertes (.claude, .claude-perso, …)
-    Homes,
+    /// Gère les homes Claude (liste / ajout / retrait)
+    Homes {
+        #[command(subcommand)]
+        action: Option<HomesAction>,
+    },
+}
+
+#[derive(Subcommand)]
+enum HomesAction {
+    /// Enregistre une home dans la config Claudine
+    Add {
+        /// Chemin du répertoire de la home (ex. ~/.claude-perso)
+        path: PathBuf,
+        /// Étiquette explicite (sinon dérivée du dernier composant)
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// Retire une home enregistrée de la config Claudine
+    Remove {
+        /// Étiquette de la home à retirer
+        label: String,
+    },
 }
 
 fn main() {
@@ -60,7 +80,11 @@ fn main() {
             overwrite,
             home,
         }) => cli::run_import(bundle, maps, dry_run, overwrite, home),
-        Some(Command::Homes) => cli::run_homes(),
+        Some(Command::Homes { action }) => match action {
+            None => cli::run_homes(),
+            Some(HomesAction::Add { path, label }) => cli::run_homes_add(path, label),
+            Some(HomesAction::Remove { label }) => cli::run_homes_remove(label),
+        },
     };
     if let Err(e) = result {
         eprintln!("Erreur : {e}");

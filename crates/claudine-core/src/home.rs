@@ -195,7 +195,10 @@ pub fn discover_homes() -> Vec<ClaudeHome> {
         }
     }
 
-    homes
+    // Ajoute les homes enregistrées dans la config Claudine, même si elles ne
+    // passeraient pas l'heuristique de scan automatique.
+    let config = crate::config::ClaudineConfig::load();
+    crate::config::merge_registered(homes, &config.homes)
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 //! Cœur logique de Claudine : lecture/écriture de la structure `~/.claude`.
 
+pub mod config;
 pub mod error;
 pub mod home;
 pub mod pathcodec;
@@ -10,6 +11,7 @@ pub mod export;
 pub mod remap;
 pub mod import;
 
+pub use config::{config_path, merge_registered, ClaudineConfig, RegisteredHome};
 pub use error::{CoreError, Report, Result};
 pub use home::{discover_homes, discover_homes_in, ClaudeHome};
 pub use pathcodec::encode_cwd;
