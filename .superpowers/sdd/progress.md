@@ -40,3 +40,4 @@ Vue agrégée: complete (commit ci-dessus) — « Tous les homes » dans le sél
 Ménage sessions: complete (commits 464ce7d cœur, ci-dessus TUI) — supprimer (corbeille+confirm) / déplacer (remap). 70 tests verts.
 Agrégé par défaut: complete (commit ci-dessus) — au démarrage, tous les homes visibles si 2+. 70 tests verts.
 Regroupement par home: complete (commit ci-dessus) — en-têtes par home + pagination Browse. 70 tests verts.
+Chemins projets: complete (commit ci-dessus) — décodage par sondage FS pour les projets sans session. 72 tests verts.
