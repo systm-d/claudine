@@ -12,12 +12,16 @@ fn fake_home_with_session(base: &std::path::Path) {
 }
 
 #[test]
-fn bare_invocation_prints_placeholder() {
+fn bare_invocation_launches_tui() {
+    // Sans TTY (environnement de test/CI), la TUI ne peut pas passer en raw mode :
+    // elle doit échouer proprement (code non nul + message sur stderr), sans
+    // jamais laisser le terminal cassé. On ne peut pas piloter la TUI ici.
     Command::cargo_bin("claudine")
         .unwrap()
+        .write_stdin("")
         .assert()
-        .success()
-        .stdout(contains("TUI à venir"));
+        .failure()
+        .stderr(contains("Erreur"));
 }
 
 #[test]

@@ -11,6 +11,8 @@ path = "src/main.rs"
 [dependencies]
 claudine-core = { path = "../claudine-core" }
 clap = { version = "4", features = ["derive"] }
+ratatui = "0.28"
+serde_json = "1"
 
 [dev-dependencies]
 assert_cmd = "2"

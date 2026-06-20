@@ -1,0 +1,140 @@
+//! Interface TUI Claudine : configuration du terminal, boucle d'évènements.
+
+pub mod app;
+pub mod ui;
+
+use std::io::{self, Stdout};
+use std::panic;
+
+use ratatui::crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{backend::CrosstermBackend, Terminal};
+
+use claudine_core::ClaudeHome;
+
+use app::{App, Section};
+
+type Tui = Terminal<CrosstermBackend<Stdout>>;
+
+/// Point d'entrée public : découvre la home, prépare le terminal, lance la
+/// boucle et restaure le terminal quoi qu'il arrive.
+pub fn run() -> io::Result<()> {
+    let home = ClaudeHome::discover().map_err(|e| io::Error::other(e.to_string()))?;
+    let app = App::new(home);
+    run_app(app)
+}
+
+/// Prépare le terminal, exécute la boucle puis restaure systématiquement.
+fn run_app(app: App) -> io::Result<()> {
+    install_panic_hook();
+    let mut terminal = setup_terminal()?;
+    let result = event_loop(&mut terminal, app);
+    // Restauration garantie, même si la boucle a échoué.
+    let restore = restore_terminal(&mut terminal);
+    result.and(restore)
+}
+
+fn setup_terminal() -> io::Result<Tui> {
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    Terminal::new(backend)
+}
+
+fn restore_terminal(terminal: &mut Tui) -> io::Result<()> {
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+    Ok(())
+}
+
+/// Restauration de bas niveau utilisée par le hook de panique (sans `Terminal`).
+fn restore_terminal_raw() {
+    let _ = disable_raw_mode();
+    let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+}
+
+/// Installe un hook qui restaure le terminal avant de déléguer au handler par
+/// défaut, pour qu'une panique ne laisse jamais le terminal cassé.
+fn install_panic_hook() {
+    let default = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        restore_terminal_raw();
+        default(info);
+    }));
+}
+
+/// Boucle principale : rendu puis traitement des évènements clavier.
+fn event_loop(terminal: &mut Tui, mut app: App) -> io::Result<()> {
+    while !app.should_quit {
+        terminal.draw(|f| ui::render(&mut app, f))?;
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(&mut app, key),
+            Event::Resize(_, _) => {}
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Traduit une touche en action sur l'`App`.
+fn handle_key(app: &mut App, key: KeyEvent) {
+    // Ctrl-C quitte toujours.
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+        app.quit();
+        return;
+    }
+
+    // L'overlay d'aide capture l'essentiel des touches.
+    if app.show_help {
+        match key.code {
+            KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q') => app.toggle_help(),
+            _ => {}
+        }
+        return;
+    }
+
+    // Toute frappe efface une notification de statut affichée.
+    app.status = None;
+
+    match key.code {
+        KeyCode::Char('q') => app.quit(),
+        KeyCode::Char('?') => app.toggle_help(),
+        KeyCode::Char('e') => app.do_export(),
+
+        // Sélection directe de section.
+        KeyCode::Char('1') => app.set_section(Section::Browse),
+        KeyCode::Char('2') => app.set_section(Section::Memory),
+        KeyCode::Char('3') => app.set_section(Section::Config),
+        KeyCode::Tab => app.next_section(),
+        // Shift-Tab bascule le focus entre panneaux dans Browse.
+        KeyCode::BackTab => app.toggle_focus(),
+
+        // En sous-vue (transcript), Esc remonte ; sinon il quitte.
+        KeyCode::Esc if !app.back() => app.quit(),
+        KeyCode::Esc => {}
+
+        KeyCode::Enter => app.open_transcript(),
+
+        KeyCode::Up | KeyCode::Char('k') => app.move_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.move_down(),
+
+        KeyCode::Left | KeyCode::Char('h') => app.focus_left(),
+        KeyCode::Right | KeyCode::Char('l') => app.focus_right(),
+
+        KeyCode::PageUp => app.page_up(),
+        KeyCode::PageDown => app.page_down(),
+        KeyCode::Home => app.go_home(),
+        KeyCode::End => app.go_end(),
+
+        _ => {}
+    }
+}

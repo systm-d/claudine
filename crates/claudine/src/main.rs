@@ -1,4 +1,5 @@
 mod cli;
+mod tui;
 
 use std::path::PathBuf;
 
@@ -35,10 +36,10 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        None => {
-            println!("Claudine — TUI à venir (phase 2). Essayez `claudine --help`.");
-            Ok(())
-        }
+        // Invocation nue : lance la TUI interactive. Le terminal est toujours
+        // restauré (y compris sur erreur/panique) avant que l'erreur ne soit
+        // affichée par le bloc ci-dessous.
+        None => tui::run().map_err(|e| e.to_string()),
         Some(Command::Export { out, no_history }) => cli::run_export(out, no_history),
         Some(Command::Import {
             bundle,
