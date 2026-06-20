@@ -41,3 +41,4 @@ Ménage sessions: complete (commits 464ce7d cœur, ci-dessus TUI) — supprimer 
 Agrégé par défaut: complete (commit ci-dessus) — au démarrage, tous les homes visibles si 2+. 70 tests verts.
 Regroupement par home: complete (commit ci-dessus) — en-têtes par home + pagination Browse. 70 tests verts.
 Chemins projets: complete (commit ci-dessus) — décodage par sondage FS pour les projets sans session. 72 tests verts.
+Chemins lisibles: complete (commit ci-dessus) — ~ + troncature gauche selon largeur. 72 tests verts.
