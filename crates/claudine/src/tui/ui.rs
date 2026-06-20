@@ -150,35 +150,43 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
 
     // --- Projets ---
     let projects_focused = app.focus == Focus::Projects;
-    let proj_items: Vec<ListItem> = app
-        .projects
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let label = p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone());
-            let count = p.sessions.len();
-            let mut spans = vec![
-                Span::raw(label),
-                Span::styled(format!("  ({count} sess.)"), Style::default().fg(DIM)),
-            ];
-            // En vue agrégée, indique le home d'origine du projet.
-            if app.aggregate {
-                if let Some(h) = app.project_homes.get(i) {
-                    spans.push(Span::styled(
-                        format!("  ⟨{h}⟩"),
-                        Style::default().fg(ACCENT),
-                    ));
-                }
+    // En vue agrégée, un en-tête par home regroupe ses projets (qui sont déjà
+    // contigus par home) ; sinon, simple liste plate. `row_of_project[i]` donne
+    // la ligne d'affichage du projet i (les en-têtes décalent les indices).
+    let mut proj_items: Vec<ListItem> = Vec::new();
+    let mut row_of_project: Vec<usize> = Vec::with_capacity(app.projects.len());
+    let mut last_home: Option<String> = None;
+    for (i, p) in app.projects.iter().enumerate() {
+        if app.aggregate {
+            let home = app.project_homes.get(i).cloned().unwrap_or_default();
+            if last_home.as_deref() != Some(home.as_str()) {
+                let count = app
+                    .project_homes
+                    .iter()
+                    .filter(|h| h.as_str() == home.as_str())
+                    .count();
+                proj_items.push(ListItem::new(Line::from(Span::styled(
+                    format!("▾ {home}  ({count} projets)"),
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ))));
+                last_home = Some(home);
             }
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
+        }
+        row_of_project.push(proj_items.len());
+        let label = p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone());
+        let count = p.sessions.len();
+        let indent = if app.aggregate { "  " } else { "" };
+        proj_items.push(ListItem::new(Line::from(vec![
+            Span::raw(format!("{indent}{label}")),
+            Span::styled(format!("  ({count} sess.)"), Style::default().fg(DIM)),
+        ])));
+    }
     let proj_list = List::new(proj_items)
         .block(pane_block(" Projets ", projects_focused))
         .highlight_style(selection_style(projects_focused))
         .highlight_symbol("▶ ");
     let mut proj_state = ListState::default();
-    proj_state.select(Some(app.project_idx));
+    proj_state.select(Some(row_of_project.get(app.project_idx).copied().unwrap_or(0)));
     f.render_stateful_widget(proj_list, cols[0], &mut proj_state);
 
     // --- Sessions ---

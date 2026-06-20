@@ -325,6 +325,21 @@ impl App {
         }
     }
 
+    /// Va au début (false) ou à la fin (true) de la liste focalisée (Browse).
+    fn browse_to(&mut self, to_last: bool) {
+        match self.focus {
+            Focus::Projects => {
+                let n = self.project_count();
+                self.project_idx = if to_last { n.saturating_sub(1) } else { 0 };
+                self.session_idx = 0;
+            }
+            Focus::Sessions => {
+                let n = self.session_count();
+                self.session_idx = if to_last { n.saturating_sub(1) } else { 0 };
+            }
+        }
+    }
+
     pub fn focus_left(&mut self) {
         if self.section == Section::Browse && self.browse_view == BrowseView::List {
             self.focus = Focus::Projects;
@@ -414,6 +429,7 @@ impl App {
                 let max = self.transcript_max_scroll();
                 self.transcript_scroll = (self.transcript_scroll + step).min(max);
             }
+            Section::Browse if self.browse_view == BrowseView::List => self.browse_move(10),
             Section::Memory => {
                 self.memory_scroll = page(self.memory_scroll, self.memory_viewport, true);
             }
@@ -434,6 +450,7 @@ impl App {
                 let step = self.transcript_viewport.max(1);
                 self.transcript_scroll = self.transcript_scroll.saturating_sub(step);
             }
+            Section::Browse if self.browse_view == BrowseView::List => self.browse_move(-10),
             Section::Memory => {
                 self.memory_scroll = page(self.memory_scroll, self.memory_viewport, false);
             }
@@ -453,6 +470,7 @@ impl App {
             Section::Browse if self.browse_view == BrowseView::Transcript => {
                 self.transcript_scroll = 0
             }
+            Section::Browse if self.browse_view == BrowseView::List => self.browse_to(false),
             Section::Memory => self.memory_scroll = 0,
             Section::Config => {
                 if self.settings.raw() {
@@ -470,6 +488,7 @@ impl App {
             Section::Browse if self.browse_view == BrowseView::Transcript => {
                 self.transcript_scroll = self.transcript_max_scroll()
             }
+            Section::Browse if self.browse_view == BrowseView::List => self.browse_to(true),
             Section::Memory => {
                 self.memory_scroll = self
                     .memory_lines
