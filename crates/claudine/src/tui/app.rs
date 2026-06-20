@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use claudine_core::{
-    discover_homes, export, scan_projects, ClaudeHome, ClaudineConfig, ExportOptions, Project,
-    SessionMeta,
+    discover_homes, export, move_session, scan_projects, trash_session, ClaudeHome, ClaudineConfig,
+    ExportOptions, Project, SessionMeta,
 };
 use serde_json::Value;
 
@@ -71,6 +71,14 @@ pub struct TranscriptEntry {
     pub unparsable: bool,
 }
 
+/// Une cible de déplacement de session : un projet (cwd) dans un home donné.
+#[derive(Debug, Clone)]
+pub struct MoveTarget {
+    pub label: String,
+    pub cwd: String,
+    pub home_base: PathBuf,
+}
+
 /// Mode de saisie du sélecteur de home : navigation, ou saisie d'un chemin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PickerMode {
@@ -101,9 +109,18 @@ pub struct App {
     pub projects: Vec<Project>,
     /// Label du home d'origine de chaque projet (aligné sur `projects`).
     pub project_homes: Vec<String>,
+    /// Base du home d'origine de chaque projet (aligné sur `projects`).
+    pub project_home_bases: Vec<PathBuf>,
     /// Vue agrégée : projets de tous les homes à la fois.
     pub aggregate: bool,
     pub browse_view: BrowseView,
+
+    // --- Ménage (suppression / déplacement de sessions) ---
+    /// Confirmation de suppression (corbeille) de la session sélectionnée.
+    pub confirm_delete: bool,
+    /// Cibles de déplacement proposées (popup) ; `None` = popup fermé.
+    pub move_targets: Option<Vec<MoveTarget>>,
+    pub move_idx: usize,
     pub focus: Focus,
     pub project_idx: usize,
     pub session_idx: usize,
@@ -147,6 +164,7 @@ impl App {
         let home = &homes[0];
         let projects = scan_projects(home).unwrap_or_default();
         let project_homes = vec![home.label.clone(); projects.len()];
+        let project_home_bases = vec![home.base.clone(); projects.len()];
         let memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
         let config_lines = build_config_lines(home);
         let settings = SettingsForm::load(home);
@@ -163,8 +181,12 @@ impl App {
             picker_mode: PickerMode::List,
             projects,
             project_homes,
+            project_home_bases,
             aggregate: false,
             browse_view: BrowseView::List,
+            confirm_delete: false,
+            move_targets: None,
+            move_idx: 0,
             focus: Focus::Projects,
             project_idx: 0,
             session_idx: 0,
@@ -602,6 +624,7 @@ impl App {
     fn reload_projects(&mut self) {
         let mut projects = Vec::new();
         let mut project_homes = Vec::new();
+        let mut project_home_bases = Vec::new();
         let homes: Vec<&ClaudeHome> = if self.aggregate {
             self.homes.iter().collect()
         } else {
@@ -611,12 +634,141 @@ impl App {
             if let Ok(ps) = scan_projects(h) {
                 for p in ps {
                     project_homes.push(h.label.clone());
+                    project_home_bases.push(h.base.clone());
                     projects.push(p);
                 }
             }
         }
         self.projects = projects;
         self.project_homes = project_homes;
+        self.project_home_bases = project_home_bases;
+    }
+
+    /// Borne les index de Browse après un rechargement (ex. suppression).
+    fn clamp_browse_indices(&mut self) {
+        if self.project_idx >= self.projects.len() {
+            self.project_idx = self.projects.len().saturating_sub(1);
+        }
+        let sc = self.session_count();
+        if self.session_idx >= sc {
+            self.session_idx = sc.saturating_sub(1);
+        }
+        if sc == 0 {
+            self.focus = Focus::Projects;
+        }
+    }
+
+    // --- Ménage : suppression (corbeille) et déplacement de sessions ---
+
+    fn on_sessions(&self) -> bool {
+        self.section == Section::Browse
+            && self.browse_view == BrowseView::List
+            && self.focus == Focus::Sessions
+    }
+
+    /// Demande la confirmation de suppression de la session sélectionnée.
+    pub fn request_delete_session(&mut self) {
+        if self.on_sessions() && self.selected_session().is_some() {
+            self.confirm_delete = true;
+        }
+    }
+
+    pub fn confirm_delete_cancel(&mut self) {
+        self.confirm_delete = false;
+    }
+
+    /// Confirme : déplace la session vers la corbeille du home, recharge.
+    pub fn confirm_delete_apply(&mut self) {
+        self.confirm_delete = false;
+        let (encoded, path) = match (self.selected_project(), self.selected_session()) {
+            (Some(p), Some(s)) => (p.encoded_name.clone(), s.path.clone()),
+            _ => return,
+        };
+        let base = self
+            .project_home_bases
+            .get(self.project_idx)
+            .cloned()
+            .unwrap_or_else(|| self.home().base.clone());
+        match trash_session(&base, &encoded, &path) {
+            Ok(dest) => {
+                self.reload_projects();
+                self.clamp_browse_indices();
+                self.status = Some(format!("Session → corbeille : {}", dest.display()));
+            }
+            Err(e) => self.status = Some(format!("Échec suppression : {e}")),
+        }
+    }
+
+    /// Ouvre le sélecteur de cible de déplacement (tous les projets sauf l'actuel).
+    pub fn request_move_session(&mut self) {
+        if !self.on_sessions() || self.selected_session().is_none() {
+            return;
+        }
+        let mut targets = Vec::new();
+        for (i, p) in self.projects.iter().enumerate() {
+            if i == self.project_idx {
+                continue;
+            }
+            if let Some(cwd) = &p.cwd {
+                let home = self.project_homes.get(i).cloned().unwrap_or_default();
+                let base = self.project_home_bases.get(i).cloned().unwrap_or_default();
+                targets.push(MoveTarget {
+                    label: format!("{cwd}  ⟨{home}⟩"),
+                    cwd: cwd.clone(),
+                    home_base: base,
+                });
+            }
+        }
+        if targets.is_empty() {
+            self.status = Some("Aucune cible de déplacement disponible".to_string());
+            return;
+        }
+        self.move_targets = Some(targets);
+        self.move_idx = 0;
+    }
+
+    pub fn move_picker_cancel(&mut self) {
+        self.move_targets = None;
+    }
+
+    pub fn move_picker_move(&mut self, delta: i32) {
+        if let Some(targets) = &self.move_targets {
+            self.move_idx = step(self.move_idx, delta, targets.len());
+        }
+    }
+
+    /// Déplace la session sélectionnée vers la cible surlignée (remap du cwd).
+    pub fn move_picker_select(&mut self) {
+        let target = match &self.move_targets {
+            Some(t) => match t.get(self.move_idx) {
+                Some(t) => t.clone(),
+                None => {
+                    self.move_targets = None;
+                    return;
+                }
+            },
+            None => return,
+        };
+        let path = match self.selected_session() {
+            Some(s) => s.path.clone(),
+            None => {
+                self.move_targets = None;
+                return;
+            }
+        };
+        let old_cwd = self
+            .selected_session()
+            .and_then(|s| s.cwd.clone())
+            .or_else(|| self.selected_project().and_then(|p| p.cwd.clone()));
+        self.move_targets = None;
+        match move_session(&path, old_cwd.as_deref(), &target.home_base, &target.cwd) {
+            Ok(dest) => {
+                self.reload_projects();
+                self.clamp_browse_indices();
+                self.status = Some(format!("Session déplacée → {}", dest.display()));
+            }
+            Err(e) => self.status = Some(format!("Échec déplacement : {e}")),
+        }
     }
 
     /// Recharge projets / mémoire / config pour la home active et réinitialise
@@ -1143,6 +1295,65 @@ mod tests {
         app.set_section(Section::Browse);
         app.request_edit();
         assert!(app.pending_edit.is_none());
+    }
+
+    #[test]
+    fn delete_session_trashes_and_reloads() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdir = dir.path().join("projects").join("-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(
+            pdir.join("aaaa.jsonl"),
+            r#"{"type":"user","cwd":"/home/x","message":{"content":"hi"}}"#,
+        )
+        .unwrap();
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::Sessions);
+
+        app.request_delete_session();
+        assert!(app.confirm_delete);
+        app.confirm_delete_apply();
+        assert!(!app.confirm_delete);
+
+        assert_eq!(app.session_count(), 0, "session partie en corbeille");
+        assert!(dir.path().join("trash").exists(), "corbeille créée");
+        assert!(!pdir.join("aaaa.jsonl").exists(), "original retiré");
+    }
+
+    #[test]
+    fn move_session_between_projects() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("projects").join("-home-a");
+        fs::create_dir_all(&a).unwrap();
+        fs::write(
+            a.join("s1.jsonl"),
+            r#"{"type":"user","cwd":"/home/a","message":{"content":"hi"}}"#,
+        )
+        .unwrap();
+        let b = dir.path().join("projects").join("-home-b");
+        fs::create_dir_all(&b).unwrap();
+        fs::write(
+            b.join("other.jsonl"),
+            r#"{"type":"user","cwd":"/home/b","message":{"content":"yo"}}"#,
+        )
+        .unwrap();
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+        // Projets triés par nom : -home-a (idx 0), -home-b (idx 1). On part de A.
+        app.project_idx = 0;
+        app.toggle_focus();
+        assert_eq!(app.focus, Focus::Sessions);
+
+        app.request_move_session();
+        let targets = app.move_targets.as_ref().expect("cibles");
+        assert_eq!(targets.len(), 1, "seule cible = projet B");
+        app.move_picker_select();
+        assert!(app.move_targets.is_none());
+
+        assert!(b.join("s1.jsonl").exists(), "session déplacée dans B");
+        assert!(!a.join("s1.jsonl").exists(), "retirée de A");
     }
 
     #[test]

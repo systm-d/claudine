@@ -59,6 +59,13 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_settings_list_editor(app, f, area);
     }
 
+    if app.confirm_delete {
+        render_confirm_delete(app, f, area);
+    }
+    if app.move_targets.is_some() {
+        render_move_picker(app, f, area);
+    }
+
     if app.show_picker {
         render_picker(app, f, area);
     }
@@ -518,6 +525,29 @@ fn render_status(app: &App, f: &mut Frame, area: Rect) {
 }
 
 fn render_footer(app: &App, f: &mut Frame, area: Rect) {
+    // Modales de ménage : raccourcis prioritaires.
+    if app.confirm_delete {
+        f.render_widget(
+            Paragraph::new(Line::from(key_hints(&[
+                ("o", "oui (corbeille)"),
+                ("n / Esc", "annuler"),
+            ]))),
+            area,
+        );
+        return;
+    }
+    if app.move_targets.is_some() {
+        f.render_widget(
+            Paragraph::new(Line::from(key_hints(&[
+                ("↑/↓", "cible"),
+                ("Enter", "valider"),
+                ("Esc", "annuler"),
+            ]))),
+            area,
+        );
+        return;
+    }
+
     // Le sélecteur de home a ses propres raccourcis prioritaires.
     if app.show_picker {
         let hints = if matches!(app.picker_mode, PickerMode::AddInput(_)) {
@@ -556,7 +586,8 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("←/→", "panneau"),
             ("↑/↓", "naviguer"),
             ("Enter", "ouvrir"),
-            ("e", "export"),
+            ("d", "corbeille"),
+            ("m", "déplacer"),
             ("H", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
@@ -622,6 +653,8 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("← → / h l", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
+        ("d / Suppr", "session → corbeille (récupérable)"),
+        ("m", "déplacer la session vers un autre projet"),
         ("Esc", "retour (transcript) sinon quitter"),
         ("PgUp / PgDn", "défilement par page"),
         ("Home / End", "aller au début / à la fin"),
@@ -743,6 +776,88 @@ fn render_picker(app: &App, f: &mut Frame, area: Rect) {
         ]);
         f.render_widget(Paragraph::new(line), input_area);
     }
+}
+
+/// Popup de confirmation de suppression (mise en corbeille) d'une session.
+fn render_confirm_delete(app: &App, f: &mut Frame, area: Rect) {
+    let id = app
+        .selected_session()
+        .map(|s| s.id.chars().take(8).collect::<String>())
+        .unwrap_or_default();
+    let popup = centered_rect(54, 34, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default().borders(Borders::ALL).title(Span::styled(
+        " Supprimer la session ",
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+    ));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  Session {id}"),
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("  La déplacer vers la corbeille du home ?"),
+        Line::from(Span::styled(
+            "  (récupérable dans <home>/trash/…)",
+            Style::default().fg(DIM),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "  [o]",
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" oui    "),
+            Span::styled(
+                "[n]",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" non"),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+/// Popup de sélection de la cible de déplacement d'une session.
+fn render_move_picker(app: &App, f: &mut Frame, area: Rect) {
+    let Some(targets) = &app.move_targets else {
+        return;
+    };
+    let id = app
+        .selected_session()
+        .map(|s| s.id.chars().take(8).collect::<String>())
+        .unwrap_or_default();
+    let popup = centered_rect(74, 60, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            format!(" Déplacer la session {id} vers… "),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(" Enter valider · Esc annuler ").right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let items: Vec<ListItem> = targets
+        .iter()
+        .map(|t| ListItem::new(Line::from(t.label.clone())))
+        .collect();
+    let list = List::new(items)
+        .highlight_style(
+            Style::default()
+                .bg(ACCENT)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    if !targets.is_empty() {
+        state.select(Some(app.move_idx.min(targets.len() - 1)));
+    }
+    f.render_stateful_widget(list, inner, &mut state);
 }
 
 // --- Helpers de style/layout ---

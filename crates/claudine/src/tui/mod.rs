@@ -130,6 +130,29 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Confirmation de suppression.
+    if app.confirm_delete {
+        match key.code {
+            KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+            | KeyCode::Enter => app.confirm_delete_apply(),
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => app.confirm_delete_cancel(),
+            _ => {}
+        }
+        return;
+    }
+
+    // Sélecteur de cible de déplacement.
+    if app.move_targets.is_some() {
+        match key.code {
+            KeyCode::Esc => app.move_picker_cancel(),
+            KeyCode::Enter => app.move_picker_select(),
+            KeyCode::Up | KeyCode::Char('k') => app.move_picker_move(-1),
+            KeyCode::Down | KeyCode::Char('j') => app.move_picker_move(1),
+            _ => {}
+        }
+        return;
+    }
+
     // L'overlay d'aide capture l'essentiel des touches.
     if app.show_help {
         match key.code {
@@ -173,6 +196,10 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {}
 
         KeyCode::Enter => app.on_enter(),
+
+        // Ménage des sessions (focus Sessions dans Browse).
+        KeyCode::Char('d') | KeyCode::Delete => app.request_delete_session(),
+        KeyCode::Char('m') => app.request_move_session(),
 
         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
