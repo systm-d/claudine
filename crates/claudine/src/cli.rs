@@ -64,3 +64,21 @@ pub fn run_import(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_maps_ok() {
+        let t = parse_maps(&["/home/old=/home/new".to_string()]).unwrap();
+        assert_eq!(t.rules.len(), 1);
+        assert_eq!(t.rules[0].from, "/home/old");
+        assert_eq!(t.rules[0].to, "/home/new");
+    }
+
+    #[test]
+    fn parse_maps_rejects_missing_equals() {
+        assert!(parse_maps(&["noeq".to_string()]).is_err());
+    }
+}
