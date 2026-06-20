@@ -38,6 +38,7 @@ pub(crate) mod testkit {
             fs::write(pdir.join(format!("{id}.jsonl")), lines.join("\n")).unwrap();
         }
 
+        #[allow(dead_code)]
         pub fn write_file(&self, rel: &str, content: &str) {
             let p = self.dir.path().join(rel);
             fs::create_dir_all(p.parent().unwrap()).unwrap();
