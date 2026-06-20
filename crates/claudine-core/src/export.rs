@@ -109,14 +109,15 @@ pub fn export(home: &ClaudeHome, output: &Path, opts: &ExportOptions) -> Result<
     }
 
     // Manifest.
-    let created_at = SystemTime::now()
+    let now_secs: u64 = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs().to_string())
-        .unwrap_or_else(|_| "0".to_string());
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let created_at = now_secs.to_string();
     let manifest = Manifest {
         schema_version: SCHEMA_VERSION,
         created_at,
-        source_hostname: std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string()),
+        source_hostname: read_hostname(),
         source_home: home.base.to_string_lossy().into_owned(),
         projects: projects
             .iter()
@@ -138,6 +139,7 @@ pub fn export(home: &ClaudeHome, output: &Path, opts: &ExportOptions) -> Result<
     let mut header = tar::Header::new_gnu();
     header.set_size(manifest_bytes.len() as u64);
     header.set_mode(0o644);
+    header.set_mtime(now_secs);
     header.set_cksum();
     builder
         .append_data(&mut header, "manifest.json", manifest_bytes.as_slice())
@@ -147,6 +149,23 @@ pub fn export(home: &ClaudeHome, output: &Path, opts: &ExportOptions) -> Result<
     enc.finish().map_err(|e| CoreError::io(output, e))?;
 
     Ok(report)
+}
+
+/// Best-effort nom d'hôte source pour la provenance du bundle.
+fn read_hostname() -> String {
+    if let Ok(h) = std::env::var("HOSTNAME") {
+        let h = h.trim();
+        if !h.is_empty() {
+            return h.to_string();
+        }
+    }
+    if let Ok(h) = std::fs::read_to_string("/etc/hostname") {
+        let h = h.trim();
+        if !h.is_empty() {
+            return h.to_string();
+        }
+    }
+    "unknown".to_string()
 }
 
 #[cfg(test)]
