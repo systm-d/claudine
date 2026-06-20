@@ -18,7 +18,7 @@ pub use scan::{read_session_meta, scan_projects};
 pub use manifest::{Manifest, ManifestProject, SCHEMA_VERSION};
 pub use export::{export, ExportOptions};
 pub use remap::{rewrite_jsonl_line, RemapRule, RemapTable};
-pub use import::{dry_run, read_manifest, ImportOptions};
+pub use import::{apply, dry_run, read_manifest, ImportOptions};
 
 #[cfg(test)]
 pub(crate) mod testkit {

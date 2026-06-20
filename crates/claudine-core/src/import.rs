@@ -50,6 +50,13 @@ pub fn read_manifest(bundle: &Path) -> Result<Manifest> {
     Err(CoreError::BundleFormat("manifest.json absent".to_string()))
 }
 
+/// Vrai si tous les composants du chemin sont `Normal` (pas de `..`, racine,
+/// préfixe ni `.`) — garde contre le tar-slip avant de construire une destination.
+fn entry_is_path_safe(path: &Path) -> bool {
+    path.components()
+        .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
 /// Calcule le nouveau cwd (via la table) et le nouveau nom de dossier encodé.
 // Note: également utilisé par la tâche 10 (apply).
 fn target_dir_name(old_cwd: Option<&str>, table: &RemapTable) -> Option<String> {
@@ -97,7 +104,7 @@ fn backup_existing(target: &ClaudeHome) -> Result<Option<std::path::PathBuf>> {
     }
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
     let backup_root = target.base.join("backups").join(format!("pre-import-{ts}"));
     let dest = backup_root.join("projects");
@@ -122,7 +129,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 
 /// Réécrit le contenu d'une session ligne par ligne ; préserve les lignes
 /// non parsables (verbatim) et compte les réécritures.
-fn rewrite_session(content: &str, table: &RemapTable, report: &mut Report) -> String {
+fn rewrite_session(content: &str, table: &RemapTable, report: &mut Report, context: &str) -> String {
     let mut out_lines = Vec::new();
     for line in content.lines() {
         if line.trim().is_empty() {
@@ -139,13 +146,17 @@ fn rewrite_session(content: &str, table: &RemapTable, report: &mut Report) -> St
                 out_lines.push(rewritten);
             }
             Err(_) => {
-                report.warn(format!("ligne non parsable préservée verbatim"));
+                report.warn(format!("ligne non parsable préservée verbatim dans {context}"));
                 report.bump("lines_preserved", 1);
                 out_lines.push(line.to_string());
             }
         }
     }
-    out_lines.join("\n")
+    let mut result = out_lines.join("\n");
+    if content.ends_with('\n') {
+        result.push('\n');
+    }
+    result
 }
 
 pub fn apply(
@@ -176,6 +187,19 @@ pub fn apply(
     for entry in entries {
         let mut entry = entry.map_err(|e| CoreError::io(bundle, e))?;
         let path = entry.path().map_err(|e| CoreError::io(bundle, e))?.into_owned();
+        // Ignore les entrées non régulières (symlinks/hardlinks/dirs).
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
+        // Garde anti tar-slip : rejette tout chemin contenant un composant non `Normal`.
+        if !entry_is_path_safe(&path) {
+            report.warn(format!(
+                "entrée d'archive ignorée (chemin non sûr): {}",
+                path.to_string_lossy()
+            ));
+            report.bump("entries_rejected", 1);
+            continue;
+        }
         let comps: Vec<String> = path
             .components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
@@ -198,7 +222,7 @@ pub fn apply(
         entry
             .read_to_string(&mut content)
             .map_err(|e| CoreError::io(&dest, e))?;
-        let rewritten = rewrite_session(&content, table, &mut report);
+        let rewritten = rewrite_session(&content, table, &mut report, &path.to_string_lossy());
 
         std::fs::create_dir_all(&dest_dir).map_err(|e| CoreError::io(&dest_dir, e))?;
         // Écriture temp + rename.
@@ -313,5 +337,39 @@ mod tests {
         );
         // Un backup a été créé.
         assert!(home.base.join("backups").exists());
+        // Le backup contient l'état pré-import : le fichier en conflit avec son contenu d'origine.
+        let backups_dir = home.base.join("backups");
+        let backup_sub = std::fs::read_dir(&backups_dir)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let backed_up = backup_sub.join("projects/-home-new-proj/abc.jsonl");
+        assert_eq!(std::fs::read_to_string(&backed_up).unwrap(), "DÉJÀ LÀ");
+    }
+
+    #[test]
+    fn entry_is_path_safe_rejects_traversal() {
+        assert!(entry_is_path_safe(std::path::Path::new(
+            "projects/-home-new-proj/abc.jsonl"
+        )));
+        assert!(!entry_is_path_safe(std::path::Path::new(
+            "projects/../escaped.jsonl"
+        )));
+        assert!(!entry_is_path_safe(std::path::Path::new("/etc/passwd")));
+        assert!(!entry_is_path_safe(std::path::Path::new(
+            "projects/foo/../../x"
+        )));
+    }
+
+    #[test]
+    fn rewrite_session_preserves_trailing_newline() {
+        let table = RemapTable::default();
+        let mut report = Report::default();
+        let with_nl = rewrite_session("{\"a\":1}\n", &table, &mut report, "t");
+        assert!(with_nl.ends_with('\n'), "doit conserver le newline final");
+        let without_nl = rewrite_session("{\"a\":1}", &table, &mut report, "t");
+        assert!(!without_nl.ends_with('\n'), "ne doit pas en ajouter si absent");
     }
 }
