@@ -1,7 +1,7 @@
 //! État applicatif de la TUI Claudine et logique de navigation.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use claudine_core::{
@@ -89,6 +89,8 @@ pub struct App {
     pub should_quit: bool,
     pub show_help: bool,
     pub status: Option<String>,
+    /// Fichier à éditer dans `$EDITOR` (traité par la boucle d'évènements).
+    pub pending_edit: Option<PathBuf>,
 
     // --- Sélecteur de home ---
     pub show_picker: bool,
@@ -155,6 +157,7 @@ impl App {
             should_quit: false,
             show_help: false,
             status: None,
+            pending_edit: None,
             show_picker: false,
             picker_idx: 0,
             picker_mode: PickerMode::List,
@@ -511,6 +514,34 @@ impl App {
         self.memory_scroll = 0;
         self.config_scroll = 0;
         self.status = Some(format!("Cible Mémoire/Config : {}", home.label));
+    }
+
+    // --- Édition externe ($EDITOR) ---
+
+    /// Demande l'ouverture du fichier de la section courante dans `$EDITOR` :
+    /// `CLAUDE.md` (Mémoire) ou `settings.json` (Config). Traité par la boucle.
+    pub fn request_edit(&mut self) {
+        let home = &self.homes[self.active];
+        self.pending_edit = match self.section {
+            Section::Memory => Some(home.memory_file()),
+            Section::Config => Some(home.settings_file()),
+            Section::Browse => None,
+        };
+    }
+
+    /// Recharge mémoire / config / formulaire du home actif (après édition externe),
+    /// sans réinitialiser les sélections.
+    pub fn reload_files(&mut self) {
+        let home = self.homes[self.active].clone();
+        self.memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
+        self.config_lines = build_config_lines(&home);
+        self.settings = SettingsForm::load(&home);
+    }
+
+    /// Appelé après le retour de l'éditeur externe.
+    pub fn after_external_edit(&mut self, path: &Path) {
+        self.reload_files();
+        self.status = Some(format!("Édité : {}", path.display()));
     }
 
     // --- Export ---
@@ -1090,6 +1121,28 @@ mod tests {
         // La home b a un projet → l'app n'est plus vide après reload.
         assert!(!app.is_empty());
         assert!(app.status.as_deref().unwrap().contains("Home active"));
+    }
+
+    #[test]
+    fn request_edit_targets_section_file() {
+        let (_d, home) = temp_home();
+        let mut app = App::with_homes(vec![home]);
+
+        app.set_section(Section::Memory);
+        let mem = app.home().memory_file();
+        app.request_edit();
+        assert_eq!(app.pending_edit, Some(mem));
+
+        app.pending_edit = None;
+        app.set_section(Section::Config);
+        let cfg = app.home().settings_file();
+        app.request_edit();
+        assert_eq!(app.pending_edit, Some(cfg));
+
+        app.pending_edit = None;
+        app.set_section(Section::Browse);
+        app.request_edit();
+        assert!(app.pending_edit.is_none());
     }
 
     #[test]

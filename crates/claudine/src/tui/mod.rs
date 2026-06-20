@@ -6,6 +6,8 @@ pub mod ui;
 
 use std::io::{self, Stdout};
 use std::panic;
+use std::path::Path;
+use std::process::Command;
 
 use ratatui::crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -81,7 +83,36 @@ fn event_loop(terminal: &mut Tui, mut app: App) -> io::Result<()> {
             Event::Resize(_, _) => {}
             _ => {}
         }
+        // Édition externe demandée : suspend le TUI, lance l'éditeur, recharge.
+        if let Some(path) = app.pending_edit.take() {
+            edit_in_external_editor(terminal, &path)?;
+            app.after_external_edit(&path);
+        }
     }
+    Ok(())
+}
+
+/// Suspend le TUI, ouvre `path` dans `$VISUAL`/`$EDITOR` (défaut `vi`), puis
+/// restaure le terminal.
+fn edit_in_external_editor(terminal: &mut Tui, path: &Path) -> io::Result<()> {
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".to_string());
+    let mut parts = editor.split_whitespace();
+    if let Some(prog) = parts.next() {
+        let args: Vec<&str> = parts.collect();
+        let _ = Command::new(prog).args(&args).arg(path).status();
+    }
+
+    enable_raw_mode()?;
+    execute!(terminal.backend_mut(), EnterAlternateScreen, EnableMouseCapture)?;
+    terminal.clear()?;
     Ok(())
 }
 
@@ -121,6 +152,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('q') => app.quit(),
         KeyCode::Char('?') => app.toggle_help(),
         KeyCode::Char('e') => app.do_export(),
+        KeyCode::Char('E') => app.request_edit(),
         KeyCode::Char('H') => app.open_picker(),
         // Section Config : enregistrer / basculer vers le JSON brut.
         KeyCode::Char('s') => app.save_settings(),
