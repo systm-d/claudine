@@ -27,7 +27,9 @@ impl RemapTable {
             .iter()
             .filter(|r| s == r.from || s.starts_with(&format!("{}/", r.from)))
             .max_by_key(|r| r.from.len())?;
-        Some(s.replacen(&best.from, &best.to, 1))
+        // Le préfixe correspond toujours au début de `s` (garanti par le filtre) :
+        // on reconstruit explicitement pour être ancré au début, sans ambiguïté.
+        Some(format!("{}{}", best.to, &s[best.from.len()..]))
     }
 }
 
@@ -108,6 +110,15 @@ mod tests {
         assert_eq!(v["data"]["file"], "/home/new/proj/a.rs");
         assert_eq!(v["n"], 1);
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn apply_to_path_exact_match_and_boundary() {
+        let t = table();
+        // correspondance exacte (s == from)
+        assert_eq!(t.apply_to_path("/home/old").as_deref(), Some("/home/new"));
+        // garde de frontière : /home/old ne doit PAS matcher /home/oldie
+        assert_eq!(t.apply_to_path("/home/oldie"), None);
     }
 
     #[test]
