@@ -5,12 +5,14 @@ pub mod home;
 pub mod pathcodec;
 pub mod model;
 pub mod scan;
+pub mod manifest;
 
 pub use error::{CoreError, Report, Result};
 pub use home::ClaudeHome;
 pub use pathcodec::encode_cwd;
 pub use model::{Project, SessionMeta};
 pub use scan::{read_session_meta, scan_projects};
+pub use manifest::{Manifest, ManifestProject, SCHEMA_VERSION};
 
 #[cfg(test)]
 pub(crate) mod testkit {
