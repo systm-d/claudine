@@ -32,7 +32,12 @@ pub fn scan_projects(home: &ClaudeHome) -> Result<Vec<Project>> {
             }
         }
         sessions.sort_by(|a, b| a.id.cmp(&b.id));
-        let cwd = sessions.iter().find_map(|s| s.cwd.clone());
+        // cwd réel : depuis les sessions ; sinon, tentative de résolution du
+        // chemin via sondage du système de fichiers (sinon on gardera le nom encodé).
+        let cwd = sessions
+            .iter()
+            .find_map(|s| s.cwd.clone())
+            .or_else(|| crate::pathcodec::decode_encoded_to_path(&encoded_name));
         projects.push(Project {
             encoded_name,
             cwd,
