@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use claudine_core::{
-    discover_homes, export, find_in_session, move_session, scan_projects, trash_session,
-    ClaudeHome, ClaudineConfig, ExportOptions, Project, SessionMeta,
+    decode_encoded_to_path, discover_homes, export, find_in_session, list_trash, move_session,
+    restore_session, scan_projects, trash_session, ClaudeHome, ClaudineConfig, ExportOptions,
+    Project, SessionMeta,
 };
 use serde_json::Value;
 
@@ -96,6 +97,20 @@ pub struct SearchState {
     pub idx: usize,
 }
 
+/// Une entrée de corbeille affichable (avec son home d'origine pour restaurer).
+#[derive(Debug, Clone)]
+pub struct TrashEntry {
+    pub path: PathBuf,
+    pub home_base: PathBuf,
+    pub label: String,
+}
+
+/// État du viewer de corbeille.
+pub struct TrashState {
+    pub items: Vec<TrashEntry>,
+    pub idx: usize,
+}
+
 /// Mode de saisie du sélecteur de home : navigation, ou saisie d'un chemin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PickerMode {
@@ -141,6 +156,9 @@ pub struct App {
 
     /// Recherche de session (saisie + résultats) ; `None` = fermée.
     pub search: Option<SearchState>,
+
+    /// Viewer de corbeille (sessions supprimées, restaurables) ; `None` = fermé.
+    pub trash_view: Option<TrashState>,
     pub focus: Focus,
     pub project_idx: usize,
     pub session_idx: usize,
@@ -224,6 +242,7 @@ impl App {
             move_targets: None,
             move_idx: 0,
             search: None,
+            trash_view: None,
             focus: Focus::Projects,
             project_idx: 0,
             session_idx: 0,
@@ -936,6 +955,76 @@ impl App {
         }
     }
 
+    // --- Corbeille (restauration) ---
+
+    /// Ouvre le viewer de corbeille (sessions supprimées de tous les homes).
+    pub fn open_trash(&mut self) {
+        let mut items = Vec::new();
+        for h in &self.homes {
+            for it in list_trash(&h.base) {
+                let proj = decode_encoded_to_path(&it.encoded)
+                    .map(|p| humanize_path(&p))
+                    .unwrap_or_else(|| it.encoded.clone());
+                let id8: String = it
+                    .file_name
+                    .trim_end_matches(".jsonl")
+                    .chars()
+                    .take(8)
+                    .collect();
+                items.push(TrashEntry {
+                    path: it.path,
+                    home_base: h.base.clone(),
+                    label: format!("{id8}  {proj}  ⟨{}⟩", h.label),
+                });
+            }
+        }
+        if items.is_empty() {
+            self.status = Some("Corbeille vide".to_string());
+            return;
+        }
+        self.trash_view = Some(TrashState { items, idx: 0 });
+    }
+
+    pub fn trash_cancel(&mut self) {
+        self.trash_view = None;
+    }
+
+    pub fn trash_move(&mut self, delta: i32) {
+        if let Some(t) = &mut self.trash_view {
+            t.idx = step(t.idx, delta, t.items.len());
+        }
+    }
+
+    /// Restaure la session surlignée vers son projet d'origine.
+    pub fn trash_restore_selected(&mut self) {
+        let entry = match &self.trash_view {
+            Some(t) => match t.items.get(t.idx) {
+                Some(e) => e.clone(),
+                None => {
+                    self.trash_view = None;
+                    return;
+                }
+            },
+            None => return,
+        };
+        match restore_session(&entry.path, &entry.home_base) {
+            Ok(dest) => {
+                if let Some(t) = &mut self.trash_view {
+                    t.items.retain(|e| e.path != entry.path);
+                    if t.items.is_empty() {
+                        self.trash_view = None;
+                    } else {
+                        t.idx = t.idx.min(t.items.len() - 1);
+                    }
+                }
+                self.reload_projects();
+                self.clamp_browse_indices();
+                self.status = Some(format!("Restaurée → {}", dest.display()));
+            }
+            Err(e) => self.status = Some(format!("Échec restauration : {e}")),
+        }
+    }
+
     /// Recharge projets / mémoire / config pour la home active et réinitialise
     /// les sélections et défilements.
     fn reload_active(&mut self) {
@@ -1563,6 +1652,31 @@ mod tests {
         assert_eq!(app.section, Section::Browse);
         assert_eq!(app.browse_view, BrowseView::Transcript);
         assert!(!app.transcript.is_empty());
+    }
+
+    #[test]
+    fn delete_then_restore_from_trash() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdir = dir.path().join("projects").join("-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(
+            pdir.join("aaaa.jsonl"),
+            r#"{"type":"user","cwd":"/home/x","message":{"content":"hi"}}"#,
+        )
+        .unwrap();
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+        app.toggle_focus();
+
+        app.request_delete_session();
+        app.confirm_delete_apply();
+        assert_eq!(app.session_count(), 0);
+
+        app.open_trash();
+        assert_eq!(app.trash_view.as_ref().unwrap().items.len(), 1);
+        app.trash_restore_selected();
+        assert!(app.trash_view.is_none(), "corbeille vidée → fermée");
+        assert!(pdir.join("aaaa.jsonl").exists(), "session restaurée");
     }
 
     #[test]

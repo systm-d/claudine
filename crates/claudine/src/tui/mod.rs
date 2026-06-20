@@ -153,6 +153,18 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Corbeille (restauration).
+    if app.trash_view.is_some() {
+        match key.code {
+            KeyCode::Esc => app.trash_cancel(),
+            KeyCode::Enter | KeyCode::Char('r') => app.trash_restore_selected(),
+            KeyCode::Up | KeyCode::Char('k') => app.trash_move(-1),
+            KeyCode::Down | KeyCode::Char('j') => app.trash_move(1),
+            _ => {}
+        }
+        return;
+    }
+
     // Recherche de session.
     if app.search.is_some() {
         if app.search_in_results() {
@@ -200,6 +212,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('E') => app.request_edit(),
         KeyCode::Char('h') | KeyCode::Char('H') => app.open_picker(),
         KeyCode::Char('/') => app.open_search(),
+        KeyCode::Char('c') => app.open_trash(),
         // Section Config : enregistrer / basculer vers le JSON brut.
         KeyCode::Char('s') => app.save_settings(),
         KeyCode::Char('r') => app.toggle_settings_raw(),

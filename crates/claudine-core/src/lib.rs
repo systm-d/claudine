@@ -17,14 +17,14 @@ pub mod settings;
 pub use config::{config_path, merge_registered, ClaudineConfig, RegisteredHome};
 pub use error::{CoreError, Report, Result};
 pub use home::{discover_homes, discover_homes_in, ClaudeHome};
-pub use pathcodec::encode_cwd;
+pub use pathcodec::{decode_encoded_to_path, encode_cwd};
 pub use model::{Project, SessionMeta};
 pub use scan::{read_session_meta, scan_projects};
 pub use manifest::{Manifest, ManifestProject, SCHEMA_VERSION};
 pub use export::{export, ExportOptions};
 pub use remap::{rewrite_jsonl_line, RemapRule, RemapTable};
 pub use import::{apply, dry_run, read_manifest, ImportOptions};
-pub use housekeeping::{move_session, trash_session};
+pub use housekeeping::{list_trash, move_session, restore_session, trash_session, TrashItem};
 pub use search::find_in_session;
 pub use settings::{settings_catalog, FieldKind, FieldSpec, SettingsDoc};
 

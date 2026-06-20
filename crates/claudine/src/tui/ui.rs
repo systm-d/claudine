@@ -68,6 +68,9 @@ pub fn render(app: &mut App, f: &mut Frame) {
     if app.search.is_some() {
         render_search(app, f, area);
     }
+    if app.trash_view.is_some() {
+        render_trash(app, f, area);
+    }
 
     if app.show_picker {
         render_picker(app, f, area);
@@ -543,6 +546,19 @@ fn render_status(app: &App, f: &mut Frame, area: Rect) {
 }
 
 fn render_footer(app: &App, f: &mut Frame, area: Rect) {
+    // Corbeille : raccourcis prioritaires.
+    if app.trash_view.is_some() {
+        f.render_widget(
+            Paragraph::new(Line::from(key_hints(&[
+                ("↑/↓", "session"),
+                ("Enter/r", "restaurer"),
+                ("Esc", "fermer"),
+            ]))),
+            area,
+        );
+        return;
+    }
+
     // Recherche : raccourcis prioritaires.
     if let Some(s) = &app.search {
         let hints = if s.in_results {
@@ -615,9 +631,10 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("←/→", "panneau"),
             ("↑/↓", "naviguer"),
             ("Enter", "ouvrir"),
-            ("d", "corbeille"),
+            ("d", "suppr."),
             ("m", "déplacer"),
             ("/", "chercher"),
+            ("c", "corbeille"),
             ("h", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
@@ -686,6 +703,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("/", "rechercher une session (chemin / id / contenu)"),
         ("d / Suppr", "session → corbeille (récupérable)"),
         ("m", "déplacer la session vers un autre projet"),
+        ("c", "corbeille : restaurer une session supprimée"),
         ("Esc", "retour (transcript) sinon quitter"),
         ("PgUp / PgDn", "défilement par page"),
         ("Home / End", "aller au début / à la fin"),
@@ -977,6 +995,42 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(s.idx.min(s.results.len() - 1)));
     f.render_stateful_widget(list, rows[1], &mut state);
+}
+
+/// Overlay de la corbeille : liste des sessions supprimées (restaurables).
+fn render_trash(app: &App, f: &mut Frame, area: Rect) {
+    let Some(t) = &app.trash_view else {
+        return;
+    };
+    let popup = centered_rect(80, 60, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Corbeille — sessions supprimées ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(" Enter/r restaurer · Esc fermer ").right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let items: Vec<ListItem> = t
+        .items
+        .iter()
+        .map(|e| ListItem::new(Line::from(e.label.clone())))
+        .collect();
+    let list = List::new(items)
+        .highlight_style(
+            Style::default()
+                .bg(ACCENT)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    if !t.items.is_empty() {
+        state.select(Some(t.idx.min(t.items.len() - 1)));
+    }
+    f.render_stateful_widget(list, inner, &mut state);
 }
 
 // --- Helpers de style/layout ---

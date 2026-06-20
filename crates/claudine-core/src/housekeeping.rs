@@ -106,6 +106,79 @@ pub fn move_session(
     Ok(dest)
 }
 
+/// Une session en corbeille : `<home>/trash/<horodatage>/<encoded>/<fichier>`.
+#[derive(Debug, Clone)]
+pub struct TrashItem {
+    pub path: PathBuf,
+    pub encoded: String,
+    pub file_name: String,
+    pub size: u64,
+}
+
+/// Liste les sessions présentes dans la corbeille d'un home.
+pub fn list_trash(home_base: &Path) -> Vec<TrashItem> {
+    let trash = home_base.join("trash");
+    let mut items = Vec::new();
+    let Ok(ts_dirs) = fs::read_dir(&trash) else {
+        return items;
+    };
+    for ts in ts_dirs.flatten() {
+        if !ts.path().is_dir() {
+            continue;
+        }
+        let Ok(enc_dirs) = fs::read_dir(ts.path()) else {
+            continue;
+        };
+        for enc in enc_dirs.flatten() {
+            if !enc.path().is_dir() {
+                continue;
+            }
+            let encoded = enc.file_name().to_string_lossy().into_owned();
+            let Ok(files) = fs::read_dir(enc.path()) else {
+                continue;
+            };
+            for fe in files.flatten() {
+                let fp = fe.path();
+                if fp.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                    items.push(TrashItem {
+                        size: fe.metadata().map(|m| m.len()).unwrap_or(0),
+                        path: fp,
+                        encoded: encoded.clone(),
+                        file_name: fe.file_name().to_string_lossy().into_owned(),
+                    });
+                }
+            }
+        }
+    }
+    items.sort_by(|a, b| a.path.cmp(&b.path));
+    items
+}
+
+/// Restaure une session de la corbeille vers `<home>/projects/<encoded>/<fichier>`.
+/// Échoue (sans rien casser) si la destination existe déjà.
+pub fn restore_session(trash_path: &Path, home_base: &Path) -> Result<PathBuf> {
+    let file_name = trash_path
+        .file_name()
+        .ok_or_else(|| CoreError::BundleFormat("chemin de corbeille invalide".to_string()))?;
+    // L'`encoded` est le dossier parent du fichier en corbeille.
+    let encoded = trash_path
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|s| s.to_string_lossy().into_owned())
+        .ok_or_else(|| CoreError::BundleFormat("structure de corbeille invalide".to_string()))?;
+    let dest_dir = home_base.join("projects").join(&encoded);
+    fs::create_dir_all(&dest_dir).map_err(|e| CoreError::io(&dest_dir, e))?;
+    let dest = dest_dir.join(file_name);
+    if dest.exists() {
+        return Err(CoreError::Conflict(format!(
+            "déjà présent : {}",
+            dest.display()
+        )));
+    }
+    move_file(trash_path, &dest)?;
+    Ok(dest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +229,29 @@ mod tests {
         let first: Value = serde_json::from_str(content.lines().next().unwrap()).unwrap();
         assert_eq!(first["cwd"], "/home/old/b");
         assert!(content.ends_with('\n'), "newline final préservé");
+    }
+
+    #[test]
+    fn trash_then_list_then_restore_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let pdir = base.join("projects").join("-home-x-proj");
+        fs::create_dir_all(&pdir).unwrap();
+        let sess = pdir.join("abc.jsonl");
+        fs::write(&sess, "{\"cwd\":\"/home/x/proj\"}\n").unwrap();
+
+        trash_session(base, "-home-x-proj", &sess).unwrap();
+        assert!(!sess.exists());
+
+        let items = list_trash(base);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].encoded, "-home-x-proj");
+        assert_eq!(items[0].file_name, "abc.jsonl");
+
+        let restored = restore_session(&items[0].path, base).unwrap();
+        assert_eq!(restored, sess);
+        assert!(sess.exists(), "session restaurée à sa place");
+        assert!(!items[0].path.exists(), "retirée de la corbeille");
     }
 
     #[test]
