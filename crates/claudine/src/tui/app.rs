@@ -4,7 +4,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use claudine_core::{export, scan_projects, ClaudeHome, ExportOptions, Project, SessionMeta};
+use claudine_core::{
+    discover_homes, export, scan_projects, ClaudeHome, ClaudineConfig, ExportOptions, Project,
+    SessionMeta,
+};
 use serde_json::Value;
 
 /// Sections de premier niveau, sélectionnables avec Tab / 1,2,3.
@@ -66,13 +69,29 @@ pub struct TranscriptEntry {
     pub unparsable: bool,
 }
 
+/// Mode de saisie du sélecteur de home : navigation, ou saisie d'un chemin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickerMode {
+    /// Navigation dans la liste des homes.
+    List,
+    /// Saisie d'un chemin pour ajouter une home (contient le tampon courant).
+    AddInput(String),
+}
+
 /// État central de l'application TUI.
 pub struct App {
-    pub home: ClaudeHome,
+    /// Homes disponibles (au moins une). `active` indexe la home courante.
+    pub homes: Vec<ClaudeHome>,
+    pub active: usize,
     pub section: Section,
     pub should_quit: bool,
     pub show_help: bool,
     pub status: Option<String>,
+
+    // --- Sélecteur de home ---
+    pub show_picker: bool,
+    pub picker_idx: usize,
+    pub picker_mode: PickerMode,
 
     // --- Browse ---
     pub projects: Vec<Project>,
@@ -99,18 +118,35 @@ pub struct App {
 }
 
 impl App {
-    /// Construit l'application à partir d'une `ClaudeHome`, en chargeant les
-    /// projets / mémoire / config. Les erreurs de scan sont tolérées (liste vide).
-    pub fn new(home: ClaudeHome) -> App {
-        let projects = scan_projects(&home).unwrap_or_default();
+    /// Construit l'application à partir d'une liste de homes (la première est
+    /// active). Une liste vide retombe sur `discover_homes()`, et à défaut sur
+    /// `~/.claude`. Charge les projets / mémoire / config de la home active.
+    pub fn with_homes(mut homes: Vec<ClaudeHome>) -> App {
+        if homes.is_empty() {
+            homes = discover_homes();
+        }
+        if homes.is_empty() {
+            homes.push(ClaudeHome::from_base(
+                std::env::var("HOME")
+                    .map(|h| PathBuf::from(h).join(".claude"))
+                    .unwrap_or_else(|_| PathBuf::from(".claude")),
+            ));
+        }
+
+        let home = &homes[0];
+        let projects = scan_projects(home).unwrap_or_default();
         let memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
-        let config_lines = build_config_lines(&home);
+        let config_lines = build_config_lines(home);
         App {
-            home,
+            homes,
+            active: 0,
             section: Section::Browse,
             should_quit: false,
             show_help: false,
             status: None,
+            show_picker: false,
+            picker_idx: 0,
+            picker_mode: PickerMode::List,
             projects,
             browse_view: BrowseView::List,
             focus: Focus::Projects,
@@ -129,6 +165,11 @@ impl App {
     }
 
     // --- Accès ---
+
+    /// Home actuellement active.
+    pub fn home(&self) -> &ClaudeHome {
+        &self.homes[self.active]
+    }
 
     pub fn selected_project(&self) -> Option<&Project> {
         self.projects.get(self.project_idx)
@@ -369,7 +410,7 @@ impl App {
             .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
         let out = home_dir.join(format!("claudine-export-{secs}.tar.gz"));
 
-        match export(&self.home, &out, &ExportOptions::default()) {
+        match export(self.home(), &out, &ExportOptions::default()) {
             Ok(report) => {
                 let projets = report.count("projects").max(self.projects.len());
                 let sessions = report.count("sessions");
@@ -383,9 +424,196 @@ impl App {
             }
         }
     }
+
+    // --- Sélecteur de home ---
+
+    /// Ouvre le sélecteur de home, positionné sur la home active.
+    pub fn open_picker(&mut self) {
+        self.show_picker = true;
+        self.picker_mode = PickerMode::List;
+        self.picker_idx = self.active;
+    }
+
+    /// Ferme le sélecteur (et annule une éventuelle saisie en cours).
+    pub fn close_picker(&mut self) {
+        self.show_picker = false;
+        self.picker_mode = PickerMode::List;
+    }
+
+    pub fn picker_move(&mut self, delta: i32) {
+        if self.picker_mode != PickerMode::List {
+            return;
+        }
+        self.picker_idx = step(self.picker_idx, delta, self.homes.len());
+    }
+
+    /// Recharge projets / mémoire / config pour la home active et réinitialise
+    /// les sélections et défilements.
+    fn reload_active(&mut self) {
+        let home = self.homes[self.active].clone();
+        self.projects = scan_projects(&home).unwrap_or_default();
+        self.memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
+        self.config_lines = build_config_lines(&home);
+        self.browse_view = BrowseView::List;
+        self.focus = Focus::Projects;
+        self.project_idx = 0;
+        self.session_idx = 0;
+        self.transcript.clear();
+        self.transcript_scroll = 0;
+        self.memory_scroll = 0;
+        self.config_scroll = 0;
+    }
+
+    /// Valide la sélection du sélecteur : active la home surlignée, recharge et
+    /// ferme le popup.
+    pub fn picker_select(&mut self) {
+        if self.picker_mode != PickerMode::List {
+            return;
+        }
+        if self.picker_idx < self.homes.len() {
+            let label = self.homes[self.picker_idx].label.clone();
+            self.active = self.picker_idx;
+            self.reload_active();
+            self.status = Some(format!("Home active : {label}"));
+        }
+        self.close_picker();
+    }
+
+    /// Indique si la home surlignée est enregistrée dans la config (donc
+    /// retirable), par comparaison de chemin canonique.
+    pub fn picker_highlight_is_registered(&self) -> bool {
+        let Some(home) = self.homes.get(self.picker_idx) else {
+            return false;
+        };
+        let config = ClaudineConfig::load();
+        let key = canonical(&home.base);
+        config.homes.iter().any(|h| canonical(&h.path) == key)
+    }
+
+    // --- Saisie d'ajout de home ---
+
+    /// Passe en mode saisie de chemin pour ajouter une home.
+    pub fn picker_start_add(&mut self) {
+        if self.picker_mode == PickerMode::List {
+            self.picker_mode = PickerMode::AddInput(String::new());
+        }
+    }
+
+    pub fn picker_input_char(&mut self, c: char) {
+        if let PickerMode::AddInput(buf) = &mut self.picker_mode {
+            buf.push(c);
+        }
+    }
+
+    pub fn picker_input_backspace(&mut self) {
+        if let PickerMode::AddInput(buf) = &mut self.picker_mode {
+            buf.pop();
+        }
+    }
+
+    /// Annule la saisie et revient à la navigation dans la liste.
+    pub fn picker_cancel_input(&mut self) {
+        self.picker_mode = PickerMode::List;
+    }
+
+    /// Valide la saisie : si le chemin est un répertoire existant, enregistre la
+    /// home (config), recharge les homes, sélectionne la nouvelle, et confirme ;
+    /// sinon affiche une erreur et reste en mode saisie.
+    pub fn picker_confirm_add(&mut self) {
+        let path = match &self.picker_mode {
+            PickerMode::AddInput(buf) => PathBuf::from(buf.trim()),
+            PickerMode::List => return,
+        };
+
+        if path.as_os_str().is_empty() || !path.is_dir() {
+            self.status = Some(format!("Chemin invalide : {}", path.display()));
+            return;
+        }
+
+        let label = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "claude".to_string());
+
+        let mut config = ClaudineConfig::load();
+        config.add_home(label.clone(), path.clone());
+        if let Err(e) = config.save() {
+            self.status = Some(format!("Échec sauvegarde config : {e}"));
+            return;
+        }
+
+        // Recharge la liste des homes et sélectionne la home ajoutée.
+        let key = canonical(&path);
+        self.homes = discover_homes();
+        self.active = self
+            .homes
+            .iter()
+            .position(|h| canonical(&h.base) == key)
+            .unwrap_or(self.active.min(self.homes.len().saturating_sub(1)));
+        self.reload_active();
+        self.picker_idx = self.active;
+        self.picker_mode = PickerMode::List;
+        self.status = Some(format!("Home ajoutée : {label}"));
+    }
+
+    /// Retire la home surlignée si elle est enregistrée (config). Sinon affiche
+    /// un statut explicatif. Recharge et réajuste l'index actif.
+    pub fn picker_remove_highlight(&mut self) {
+        if self.picker_mode != PickerMode::List {
+            return;
+        }
+        let Some(home) = self.homes.get(self.picker_idx) else {
+            return;
+        };
+        if !self.picker_highlight_is_registered() {
+            self.status = Some("home auto-découvert : non supprimable".to_string());
+            return;
+        }
+
+        let label = home.label.clone();
+        let removed_key = canonical(&home.base);
+
+        let mut config = ClaudineConfig::load();
+        config.remove_home(&label);
+        if let Err(e) = config.save() {
+            self.status = Some(format!("Échec sauvegarde config : {e}"));
+            return;
+        }
+
+        // Mémorise la home active pour la retrouver après rechargement.
+        let active_key = canonical(&self.homes[self.active].base);
+        self.homes = discover_homes();
+        if self.homes.is_empty() {
+            // Garde-fou : ne jamais rester sans home.
+            self.homes.push(ClaudeHome::from_base(
+                std::env::var("HOME")
+                    .map(|h| PathBuf::from(h).join(".claude"))
+                    .unwrap_or_else(|_| PathBuf::from(".claude")),
+            ));
+        }
+
+        // Si la home active a été retirée, retombe sur la première.
+        self.active = if active_key == removed_key {
+            0
+        } else {
+            self.homes
+                .iter()
+                .position(|h| canonical(&h.base) == active_key)
+                .unwrap_or(0)
+        };
+        self.reload_active();
+        self.picker_idx = self.picker_idx.min(self.homes.len().saturating_sub(1));
+        self.status = Some(format!("Home retirée : {label}"));
+    }
 }
 
 // --- Helpers libres ---
+
+/// Canonicalise un chemin si possible, sinon le renvoie tel quel.
+fn canonical(path: &std::path::Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
 
 fn step(idx: usize, delta: i32, len: usize) -> usize {
     if len == 0 {
@@ -574,7 +802,7 @@ mod tests {
     #[test]
     fn app_from_empty_home_is_empty() {
         let (_d, home) = temp_home();
-        let app = App::new(home);
+        let app = App::with_homes(vec![home]);
         assert!(app.is_empty());
         assert_eq!(app.section, Section::Browse);
         // mémoire absente → message de repli
@@ -584,7 +812,7 @@ mod tests {
     #[test]
     fn sections_cycle_with_tab() {
         let (_d, home) = temp_home();
-        let mut app = App::new(home);
+        let mut app = App::with_homes(vec![home]);
         app.next_section();
         assert_eq!(app.section, Section::Memory);
         app.next_section();
@@ -643,7 +871,7 @@ mod tests {
         )
         .unwrap();
         let home = ClaudeHome::from_base(dir.path());
-        let mut app = App::new(home);
+        let mut app = App::with_homes(vec![home]);
         assert!(!app.is_empty());
 
         // descendre sur les projets ne déborde pas (un seul projet)
@@ -662,5 +890,82 @@ mod tests {
         assert_eq!(app.browse_view, BrowseView::List);
         // Esc à la racine ne consomme rien
         assert!(!app.back());
+    }
+
+    /// Construit deux homes (dont une avec un projet) et vérifie la sélection :
+    /// `picker_select` change la home active et recharge les projets. N'écrit
+    /// jamais dans la config réelle (méthodes purement en mémoire).
+    fn two_homes() -> (tempfile::TempDir, Vec<ClaudeHome>) {
+        let dir = tempfile::tempdir().unwrap();
+        // home 0 : vide
+        let h0 = dir.path().join("a");
+        fs::create_dir_all(h0.join("projects")).unwrap();
+        // home 1 : un projet
+        let h1 = dir.path().join("b");
+        let pdir = h1.join("projects").join("-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(
+            pdir.join("aaaa.jsonl"),
+            r#"{"type":"user","cwd":"/home/x","message":{"content":"hi"}}"#,
+        )
+        .unwrap();
+        let homes = vec![ClaudeHome::from_base(&h0), ClaudeHome::from_base(&h1)];
+        (dir, homes)
+    }
+
+    #[test]
+    fn picker_open_move_and_select_switches_home() {
+        let (_d, homes) = two_homes();
+        let mut app = App::with_homes(homes);
+        assert!(app.is_empty()); // home active = vide
+
+        app.open_picker();
+        assert!(app.show_picker);
+        assert_eq!(app.picker_idx, 0);
+
+        // Descend sur la 2e home puis sélectionne.
+        app.picker_move(1);
+        assert_eq!(app.picker_idx, 1);
+        app.picker_select();
+        assert!(!app.show_picker);
+        assert_eq!(app.active, 1);
+        // La home b a un projet → l'app n'est plus vide après reload.
+        assert!(!app.is_empty());
+        assert!(app.status.as_deref().unwrap().contains("Home active"));
+    }
+
+    #[test]
+    fn picker_input_mode_buffers_and_cancels() {
+        let (_d, homes) = two_homes();
+        let mut app = App::with_homes(homes);
+        app.open_picker();
+        app.picker_start_add();
+        app.picker_input_char('/');
+        app.picker_input_char('t');
+        app.picker_input_char('z');
+        app.picker_input_backspace();
+        match &app.picker_mode {
+            PickerMode::AddInput(buf) => assert_eq!(buf, "/t"),
+            _ => panic!("attendu AddInput"),
+        }
+        // Esc (cancel) revient en mode liste sans fermer le popup.
+        app.picker_cancel_input();
+        assert_eq!(app.picker_mode, PickerMode::List);
+        assert!(app.show_picker);
+    }
+
+    #[test]
+    fn picker_confirm_invalid_path_sets_error_status() {
+        let (_d, homes) = two_homes();
+        let mut app = App::with_homes(homes);
+        app.open_picker();
+        app.picker_start_add();
+        for c in "/n/existe/pas-claudine".chars() {
+            app.picker_input_char(c);
+        }
+        app.picker_confirm_add();
+        // Reste en mode saisie, statut d'erreur affiché.
+        assert!(matches!(app.picker_mode, PickerMode::AddInput(_)));
+        assert!(app.status.as_deref().unwrap().contains("invalide"));
     }
 }

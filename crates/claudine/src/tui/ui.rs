@@ -10,8 +10,9 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{App, BrowseView, Focus, Section};
+use super::app::{App, BrowseView, Focus, PickerMode, Section};
 use crate::tui::app::human_size;
+use claudine_core::scan_projects;
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
@@ -54,6 +55,10 @@ pub fn render(app: &mut App, f: &mut Frame) {
     render_status(app, f, chunks[2]);
     render_footer(app, f, chunks[3]);
 
+    if app.show_picker {
+        render_picker(app, f, area);
+    }
+
     if app.show_help {
         render_help(f, area);
     }
@@ -64,15 +69,16 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
         .iter()
         .map(|s| Line::from(format!(" {} ", s.title())))
         .collect::<Vec<_>>();
+    let title = format!(" Claudine · {} ", app.home().label);
     let tabs = Tabs::new(titles)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(Span::styled(
-                    " Claudine ",
+                    title,
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                 ))
-                .title(Line::from(" ? aide ").right_aligned()),
+                .title(Line::from(" H homes · ? aide ").right_aligned()),
         )
         .select(app.section.index())
         .highlight_style(
@@ -317,6 +323,28 @@ fn render_status(app: &App, f: &mut Frame, area: Rect) {
 }
 
 fn render_footer(app: &App, f: &mut Frame, area: Rect) {
+    // Le sélecteur de home a ses propres raccourcis prioritaires.
+    if app.show_picker {
+        let hints = if matches!(app.picker_mode, PickerMode::AddInput(_)) {
+            key_hints(&[
+                ("saisir", "chemin"),
+                ("Backspace", "effacer"),
+                ("Enter", "valider"),
+                ("Esc", "annuler"),
+            ])
+        } else {
+            key_hints(&[
+                ("↑/↓ · j/k", "naviguer"),
+                ("Enter", "activer"),
+                ("a", "ajouter"),
+                ("d", "retirer"),
+                ("Esc", "fermer"),
+            ])
+        };
+        f.render_widget(Paragraph::new(Line::from(hints)), area);
+        return;
+    }
+
     let hints: Vec<Span> = match app.section {
         Section::Browse if app.browse_view == BrowseView::Transcript => key_hints(&[
             ("↑/↓", "défiler"),
@@ -324,6 +352,7 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("Home/End", "bornes"),
             ("Esc", "retour"),
             ("e", "export"),
+            ("H", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
         ]),
@@ -333,6 +362,7 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("↑/↓", "naviguer"),
             ("Enter", "ouvrir"),
             ("e", "export"),
+            ("H", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
         ]),
@@ -341,6 +371,7 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("↑/↓", "défiler"),
             ("PgUp/PgDn", "page"),
             ("e", "export"),
+            ("H", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
         ]),
@@ -367,6 +398,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("PgUp / PgDn", "défilement par page"),
         ("Home / End", "aller au début / à la fin"),
         ("e", "exporter ~/.claude en .tar.gz"),
+        ("H", "sélecteur de home (a ajouter / d retirer)"),
         ("?", "afficher/masquer cette aide"),
         ("q / Ctrl-C", "quitter"),
     ];
@@ -387,6 +419,87 @@ fn render_help(f: &mut Frame, area: Rect) {
     )));
     let para = Paragraph::new(Text::from(lines)).block(block);
     f.render_widget(para, popup);
+}
+
+/// Popup centré du sélecteur de home : liste `label (n projets)`, home active
+/// marquée, plus une ligne de saisie quand on ajoute une home.
+fn render_picker(app: &App, f: &mut Frame, area: Rect) {
+    let popup = centered_rect(60, 60, area);
+    f.render_widget(Clear, popup);
+
+    let adding = matches!(app.picker_mode, PickerMode::AddInput(_));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Homes Claude ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(
+            Line::from(if adding {
+                " Entrée valider · Esc annuler "
+            } else {
+                " a ajouter · d retirer · Esc fermer "
+            })
+            .right_aligned(),
+        );
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    // Réserve la dernière ligne pour la saisie quand on ajoute.
+    let (list_area, input_area) = if adding {
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(2)])
+            .split(inner);
+        (rows[0], Some(rows[1]))
+    } else {
+        (inner, None)
+    };
+
+    let items: Vec<ListItem> = app
+        .homes
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            let n = scan_projects(h).map(|p| p.len()).unwrap_or(0);
+            let mark = if i == app.active { "● " } else { "  " };
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    mark,
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(h.label.clone()),
+                Span::styled(
+                    format!("  ({n} projets)"),
+                    Style::default().fg(DIM),
+                ),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .highlight_style(
+            Style::default()
+                .bg(ACCENT)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    state.select(Some(app.picker_idx.min(app.homes.len().saturating_sub(1))));
+    f.render_stateful_widget(list, list_area, &mut state);
+
+    if let (Some(input_area), PickerMode::AddInput(buf)) = (input_area, &app.picker_mode) {
+        let line = Line::from(vec![
+            Span::styled(
+                "Chemin : ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(buf.clone()),
+            Span::styled("▏", Style::default().fg(ACCENT)),
+        ]);
+        f.render_widget(Paragraph::new(line), input_area);
+    }
 }
 
 // --- Helpers de style/layout ---
@@ -469,7 +582,7 @@ mod tests {
     use std::fs;
 
     fn render_section(home: ClaudeHome, section: Section) {
-        let mut app = App::new(home);
+        let mut app = App::with_homes(vec![home]);
         app.set_section(section);
         let backend = TestBackend::new(90, 30);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -506,7 +619,7 @@ mod tests {
         )
         .unwrap();
         let home = ClaudeHome::from_base(dir.path());
-        let mut app = App::new(home);
+        let mut app = App::with_homes(vec![home]);
         app.toggle_focus();
         app.open_transcript();
 
@@ -520,7 +633,7 @@ mod tests {
     #[test]
     fn smoke_renders_help_overlay() {
         let (_d, home) = empty_home();
-        let mut app = App::new(home);
+        let mut app = App::with_homes(vec![home]);
         app.toggle_help();
         let backend = TestBackend::new(90, 30);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -531,5 +644,58 @@ mod tests {
             .content()
             .iter()
             .any(|c| c.symbol() != " "));
+    }
+
+    /// Construit deux fausses homes via `discover_homes_in` sur un tempdir, puis
+    /// rend le cadre principal ET le popup du sélecteur sans paniquer.
+    #[test]
+    fn smoke_renders_home_picker() {
+        use claudine_core::discover_homes_in;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // .claude : qualifie via settings.json
+        fs::create_dir_all(root.join(".claude")).unwrap();
+        fs::write(root.join(".claude/settings.json"), "{}").unwrap();
+        // .claude-perso : qualifie via projects/ non vide
+        let pdir = root.join(".claude-perso/projects/-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(pdir.join("x.jsonl"), "{}").unwrap();
+
+        let homes = discover_homes_in(root, None);
+        assert_eq!(homes.len(), 2, "deux homes attendues");
+
+        let mut app = App::with_homes(homes);
+
+        let backend = TestBackend::new(90, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        // Cadre principal (titre = home active).
+        terminal.draw(|f| render(&mut app, f)).unwrap();
+        assert!(terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .any(|c| c.symbol() != " "));
+
+        // Popup du sélecteur (mode liste).
+        app.open_picker();
+        terminal.draw(|f| render(&mut app, f)).unwrap();
+        assert!(app.show_picker);
+        assert!(terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .any(|c| c.symbol() != " "));
+
+        // Popup en mode saisie de chemin (ajout de home).
+        app.picker_start_add();
+        app.picker_input_char('/');
+        app.picker_input_char('x');
+        terminal.draw(|f| render(&mut app, f)).unwrap();
+        assert!(matches!(app.picker_mode, PickerMode::AddInput(_)));
     }
 }

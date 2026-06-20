@@ -13,17 +13,16 @@ use ratatui::crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use claudine_core::ClaudeHome;
+use claudine_core::discover_homes;
 
-use app::{App, Section};
+use app::{App, PickerMode, Section};
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 /// Point d'entrée public : découvre la home, prépare le terminal, lance la
 /// boucle et restaure le terminal quoi qu'il arrive.
 pub fn run() -> io::Result<()> {
-    let home = ClaudeHome::discover().map_err(|e| io::Error::other(e.to_string()))?;
-    let app = App::new(home);
+    let app = App::with_homes(discover_homes());
     run_app(app)
 }
 
@@ -93,6 +92,12 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Le sélecteur de home capture les touches tant qu'il est ouvert.
+    if app.show_picker {
+        handle_picker_key(app, key);
+        return;
+    }
+
     // L'overlay d'aide capture l'essentiel des touches.
     if app.show_help {
         match key.code {
@@ -109,6 +114,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('q') => app.quit(),
         KeyCode::Char('?') => app.toggle_help(),
         KeyCode::Char('e') => app.do_export(),
+        KeyCode::Char('H') => app.open_picker(),
 
         // Sélection directe de section.
         KeyCode::Char('1') => app.set_section(Section::Browse),
@@ -135,6 +141,33 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Home => app.go_home(),
         KeyCode::End => app.go_end(),
 
+        _ => {}
+    }
+}
+
+/// Traite les touches quand le sélecteur de home est ouvert. En mode saisie de
+/// chemin, la frappe alimente le tampon ; sinon on navigue dans la liste.
+fn handle_picker_key(app: &mut App, key: KeyEvent) {
+    // Mode saisie : on capture les caractères, Backspace, Enter et Esc.
+    if matches!(app.picker_mode, PickerMode::AddInput(_)) {
+        match key.code {
+            KeyCode::Esc => app.picker_cancel_input(),
+            KeyCode::Enter => app.picker_confirm_add(),
+            KeyCode::Backspace => app.picker_input_backspace(),
+            KeyCode::Char(c) => app.picker_input_char(c),
+            _ => {}
+        }
+        return;
+    }
+
+    // Mode navigation.
+    match key.code {
+        KeyCode::Esc => app.close_picker(),
+        KeyCode::Enter => app.picker_select(),
+        KeyCode::Up | KeyCode::Char('k') => app.picker_move(-1),
+        KeyCode::Down | KeyCode::Char('j') => app.picker_move(1),
+        KeyCode::Char('a') => app.picker_start_add(),
+        KeyCode::Char('d') => app.picker_remove_highlight(),
         _ => {}
     }
 }
