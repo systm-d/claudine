@@ -39,3 +39,4 @@ Vue agrégée: complete (commit ci-dessus) — « Tous les homes » dans le sél
 Édition externe: complete (commit ci-dessus) — E ouvre CLAUDE.md/settings.json dans $EDITOR (suspend/restaure le TUI). 64 tests verts.
 Ménage sessions: complete (commits 464ce7d cœur, ci-dessus TUI) — supprimer (corbeille+confirm) / déplacer (remap). 70 tests verts.
 Agrégé par défaut: complete (commit ci-dessus) — au démarrage, tous les homes visibles si 2+. 70 tests verts.
+Regroupement par home: complete (commit ci-dessus) — en-têtes par home + pagination Browse. 70 tests verts.
