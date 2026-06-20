@@ -31,3 +31,4 @@ Task 8: complete (commits ebb5238..4d60653, review clean après ancrage explicit
 Task 9: complete (commits 4d60653..24463fe, review clean après retrait allow(dead_code) + if-let; ⚠️ path_rewrites_planned par-session adjugé correct)
 Task 10: complete (commits 24463fe..ab0904b, re-review opus clean; faille HIGH tar-slip corrigée + newline + backup testé + apply ré-exporté)
 Task 11: complete (commit a1db717, 2 CLI integration tests pass, 21 core tests pass, 0 clippy warnings)
+Task 11: complete (commits ab0904b..e1db2c1, review clean; +test parse_maps)
