@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use claudine_core::{
-    discover_homes, export, move_session, scan_projects, trash_session, ClaudeHome, ClaudineConfig,
-    ExportOptions, Project, SessionMeta,
+    discover_homes, export, find_in_session, move_session, scan_projects, trash_session,
+    ClaudeHome, ClaudineConfig, ExportOptions, Project, SessionMeta,
 };
 use serde_json::Value;
 
@@ -79,6 +79,23 @@ pub struct MoveTarget {
     pub home_base: PathBuf,
 }
 
+/// Un résultat de recherche : pointe vers une session des projets chargés.
+#[derive(Debug, Clone)]
+pub struct SearchHit {
+    pub project_idx: usize,
+    pub session_idx: usize,
+    pub label: String,
+    pub snippet: String,
+}
+
+/// État de la recherche : saisie d'une requête puis liste de résultats.
+pub struct SearchState {
+    pub query: String,
+    pub in_results: bool,
+    pub results: Vec<SearchHit>,
+    pub idx: usize,
+}
+
 /// Mode de saisie du sélecteur de home : navigation, ou saisie d'un chemin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PickerMode {
@@ -121,6 +138,9 @@ pub struct App {
     /// Cibles de déplacement proposées (popup) ; `None` = popup fermé.
     pub move_targets: Option<Vec<MoveTarget>>,
     pub move_idx: usize,
+
+    /// Recherche de session (saisie + résultats) ; `None` = fermée.
+    pub search: Option<SearchState>,
     pub focus: Focus,
     pub project_idx: usize,
     pub session_idx: usize,
@@ -203,6 +223,7 @@ impl App {
             confirm_delete: false,
             move_targets: None,
             move_idx: 0,
+            search: None,
             focus: Focus::Projects,
             project_idx: 0,
             session_idx: 0,
@@ -806,6 +827,115 @@ impl App {
         }
     }
 
+    // --- Recherche de session ---
+
+    pub fn open_search(&mut self) {
+        self.search = Some(SearchState {
+            query: String::new(),
+            in_results: false,
+            results: Vec::new(),
+            idx: 0,
+        });
+    }
+
+    pub fn search_in_results(&self) -> bool {
+        self.search.as_ref().map(|s| s.in_results).unwrap_or(false)
+    }
+
+    pub fn search_input_char(&mut self, c: char) {
+        if let Some(s) = &mut self.search {
+            if !s.in_results {
+                s.query.push(c);
+            }
+        }
+    }
+
+    pub fn search_input_backspace(&mut self) {
+        if let Some(s) = &mut self.search {
+            if !s.in_results {
+                s.query.pop();
+            }
+        }
+    }
+
+    pub fn search_cancel(&mut self) {
+        self.search = None;
+    }
+
+    pub fn search_move(&mut self, delta: i32) {
+        if let Some(s) = &mut self.search {
+            if s.in_results {
+                s.idx = step(s.idx, delta, s.results.len());
+            }
+        }
+    }
+
+    /// Exécute la recherche sur les sessions chargées (chemin, id, contenu).
+    pub fn search_run(&mut self) {
+        let query = match &self.search {
+            Some(s) => s.query.trim().to_lowercase(),
+            None => return,
+        };
+        if query.is_empty() {
+            return;
+        }
+        let mut results = Vec::new();
+        for (pi, p) in self.projects.iter().enumerate() {
+            let proj_label = humanize_path(p.cwd.as_deref().unwrap_or(&p.encoded_name));
+            let proj_lc = proj_label.to_lowercase();
+            for (si, sess) in p.sessions.iter().enumerate() {
+                let meta_hit = proj_lc.contains(&query) || sess.id.to_lowercase().contains(&query);
+                let snippet = match find_in_session(&sess.path, &query) {
+                    Some(snip) => snip,
+                    None if meta_hit => "(correspond au chemin / id)".to_string(),
+                    None => continue,
+                };
+                let id8: String = sess.id.chars().take(8).collect();
+                results.push(SearchHit {
+                    project_idx: pi,
+                    session_idx: si,
+                    label: format!("{id8}  {proj_label}"),
+                    snippet,
+                });
+            }
+        }
+        let n = results.len();
+        if let Some(s) = &mut self.search {
+            s.results = results;
+            s.idx = 0;
+            s.in_results = true;
+        }
+        self.status = Some(format!("{n} session(s) trouvée(s) pour « {query} »"));
+    }
+
+    /// Ouvre le transcript de la session du résultat sélectionné.
+    pub fn search_open_selected(&mut self) {
+        let (pi, si) = match &self.search {
+            Some(s) => match s.results.get(s.idx) {
+                Some(h) => (h.project_idx, h.session_idx),
+                None => {
+                    self.search = None;
+                    return;
+                }
+            },
+            None => return,
+        };
+        self.search = None;
+        if pi >= self.projects.len() {
+            return;
+        }
+        self.project_idx = pi;
+        self.session_idx = si;
+        self.section = Section::Browse;
+        self.focus = Focus::Sessions;
+        if let Some(sess) = self.selected_session() {
+            let path = sess.path.clone();
+            self.transcript = parse_transcript(&path);
+            self.transcript_scroll = 0;
+            self.browse_view = BrowseView::Transcript;
+        }
+    }
+
     /// Recharge projets / mémoire / config pour la home active et réinitialise
     /// les sélections et défilements.
     fn reload_active(&mut self) {
@@ -1405,6 +1535,34 @@ mod tests {
 
         assert!(b.join("s1.jsonl").exists(), "session déplacée dans B");
         assert!(!a.join("s1.jsonl").exists(), "retirée de A");
+    }
+
+    #[test]
+    fn search_finds_and_opens_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdir = dir.path().join("projects").join("-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(
+            pdir.join("aaaa.jsonl"),
+            r#"{"type":"user","cwd":"/home/x","message":{"content":"refactor the WIDGET layout"}}"#,
+        )
+        .unwrap();
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+
+        app.open_search();
+        for c in "widget".chars() {
+            app.search_input_char(c);
+        }
+        app.search_run();
+        assert!(app.search_in_results());
+        assert_eq!(app.search.as_ref().unwrap().results.len(), 1);
+
+        app.search_open_selected();
+        assert!(app.search.is_none());
+        assert_eq!(app.section, Section::Browse);
+        assert_eq!(app.browse_view, BrowseView::Transcript);
+        assert!(!app.transcript.is_empty());
     }
 
     #[test]

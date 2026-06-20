@@ -65,6 +65,9 @@ pub fn render(app: &mut App, f: &mut Frame) {
     if app.move_targets.is_some() {
         render_move_picker(app, f, area);
     }
+    if app.search.is_some() {
+        render_search(app, f, area);
+    }
 
     if app.show_picker {
         render_picker(app, f, area);
@@ -89,7 +92,7 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
                     title,
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                 ))
-                .title(Line::from(" H homes · ? aide ").right_aligned()),
+                .title(Line::from(" h homes · / chercher · ? aide ").right_aligned()),
         )
         .select(app.section.index())
         .highlight_style(
@@ -540,6 +543,17 @@ fn render_status(app: &App, f: &mut Frame, area: Rect) {
 }
 
 fn render_footer(app: &App, f: &mut Frame, area: Rect) {
+    // Recherche : raccourcis prioritaires.
+    if let Some(s) = &app.search {
+        let hints = if s.in_results {
+            key_hints(&[("↑/↓", "résultat"), ("Enter", "ouvrir"), ("Esc", "fermer")])
+        } else {
+            key_hints(&[("saisir", "requête"), ("Enter", "chercher"), ("Esc", "annuler")])
+        };
+        f.render_widget(Paragraph::new(Line::from(hints)), area);
+        return;
+    }
+
     // Modales de ménage : raccourcis prioritaires.
     if app.confirm_delete {
         f.render_widget(
@@ -592,7 +606,7 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("Home/End", "bornes"),
             ("Esc", "retour"),
             ("e", "export"),
-            ("H", "homes"),
+            ("h", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
         ]),
@@ -603,7 +617,8 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("Enter", "ouvrir"),
             ("d", "corbeille"),
             ("m", "déplacer"),
-            ("H", "homes"),
+            ("/", "chercher"),
+            ("h", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
         ]),
@@ -618,7 +633,7 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("Tab/1·2·3", "sections"),
             ("↑/↓ PgUp/Dn", "défiler"),
             ("r", "formulaire"),
-            ("H", "homes"),
+            ("h", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
         ]),
@@ -636,7 +651,7 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("↑/↓", "défiler"),
             ("t", "cible"),
             ("E", "éditer"),
-            ("H", "homes"),
+            ("h", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
         ]),
@@ -645,7 +660,7 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("↑/↓ PgUp/Dn", "défiler"),
             ("E", "éditer"),
             ("e", "export"),
-            ("H", "homes"),
+            ("h", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
         ]),
@@ -665,9 +680,10 @@ fn render_help(f: &mut Frame, area: Rect) {
     let rows = [
         ("1 / 2 / 3", "aller à Projets / Mémoire / Config"),
         ("Tab", "section suivante"),
-        ("← → / h l", "changer de panneau (Browse)"),
+        ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
+        ("/", "rechercher une session (chemin / id / contenu)"),
         ("d / Suppr", "session → corbeille (récupérable)"),
         ("m", "déplacer la session vers un autre projet"),
         ("Esc", "retour (transcript) sinon quitter"),
@@ -676,7 +692,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("e", "exporter ~/.claude en .tar.gz"),
         ("E", "éditer le fichier de la section dans $EDITOR (Mémoire/Config)"),
         ("Config", "↑↓ champ · Enter éditer · ←→ option · s enregistrer · r JSON"),
-        ("H", "homes : ★ Tous les homes (agrégé) / un home précis"),
+        ("h", "homes : ★ Tous les homes (agrégé) / un home précis"),
         ("t", "en agrégé : changer le home cible de Mémoire/Config"),
         ("?", "afficher/masquer cette aide"),
         ("q / Ctrl-C", "quitter"),
@@ -873,6 +889,94 @@ fn render_move_picker(app: &App, f: &mut Frame, area: Rect) {
         state.select(Some(app.move_idx.min(targets.len() - 1)));
     }
     f.render_stateful_widget(list, inner, &mut state);
+}
+
+/// Overlay de recherche : ligne de saisie puis liste des résultats (label + extrait).
+fn render_search(app: &App, f: &mut Frame, area: Rect) {
+    let Some(s) = &app.search else {
+        return;
+    };
+    let popup = centered_rect(82, 72, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Rechercher une session ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(
+            Line::from(if s.in_results {
+                " ↑/↓ · Enter ouvrir · Esc fermer "
+            } else {
+                " Entrée chercher · Esc annuler "
+            })
+            .right_aligned(),
+        );
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Min(1)])
+        .split(inner);
+
+    let cursor = if s.in_results { "" } else { "▏" };
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                "Recherche : ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(s.query.clone()),
+            Span::styled(cursor, Style::default().fg(ACCENT)),
+        ])),
+        rows[0],
+    );
+
+    if !s.in_results {
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "  Tapez votre requête (chemin, id ou contenu), puis Entrée.",
+                Style::default().fg(DIM),
+            )),
+            rows[1],
+        );
+        return;
+    }
+    if s.results.is_empty() {
+        f.render_widget(
+            Paragraph::new(Span::styled("  Aucun résultat.", Style::default().fg(DIM))),
+            rows[1],
+        );
+        return;
+    }
+    let items: Vec<ListItem> = s
+        .results
+        .iter()
+        .map(|h| {
+            ListItem::new(vec![
+                Line::from(Span::styled(
+                    h.label.clone(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(
+                    format!("    {}", h.snippet),
+                    Style::default().fg(DIM),
+                )),
+            ])
+        })
+        .collect();
+    let list = List::new(items)
+        .highlight_style(
+            Style::default()
+                .bg(ACCENT)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    state.select(Some(s.idx.min(s.results.len() - 1)));
+    f.render_stateful_widget(list, rows[1], &mut state);
 }
 
 // --- Helpers de style/layout ---

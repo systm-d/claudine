@@ -11,6 +11,7 @@ pub mod export;
 pub mod remap;
 pub mod import;
 pub mod housekeeping;
+pub mod search;
 pub mod settings;
 
 pub use config::{config_path, merge_registered, ClaudineConfig, RegisteredHome};
@@ -24,6 +25,7 @@ pub use export::{export, ExportOptions};
 pub use remap::{rewrite_jsonl_line, RemapRule, RemapTable};
 pub use import::{apply, dry_run, read_manifest, ImportOptions};
 pub use housekeeping::{move_session, trash_session};
+pub use search::find_in_session;
 pub use settings::{settings_catalog, FieldKind, FieldSpec, SettingsDoc};
 
 #[cfg(test)]

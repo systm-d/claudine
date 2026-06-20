@@ -153,6 +153,28 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Recherche de session.
+    if app.search.is_some() {
+        if app.search_in_results() {
+            match key.code {
+                KeyCode::Esc => app.search_cancel(),
+                KeyCode::Enter => app.search_open_selected(),
+                KeyCode::Up => app.search_move(-1),
+                KeyCode::Down => app.search_move(1),
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Esc => app.search_cancel(),
+                KeyCode::Enter => app.search_run(),
+                KeyCode::Backspace => app.search_input_backspace(),
+                KeyCode::Char(c) => app.search_input_char(c),
+                _ => {}
+            }
+        }
+        return;
+    }
+
     // L'overlay d'aide capture l'essentiel des touches.
     if app.show_help {
         match key.code {
@@ -176,7 +198,8 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('?') => app.toggle_help(),
         KeyCode::Char('e') => app.do_export(),
         KeyCode::Char('E') => app.request_edit(),
-        KeyCode::Char('H') => app.open_picker(),
+        KeyCode::Char('h') | KeyCode::Char('H') => app.open_picker(),
+        KeyCode::Char('/') => app.open_search(),
         // Section Config : enregistrer / basculer vers le JSON brut.
         KeyCode::Char('s') => app.save_settings(),
         KeyCode::Char('r') => app.toggle_settings_raw(),
@@ -204,8 +227,8 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
 
-        KeyCode::Left | KeyCode::Char('h') => app.nav_left(),
-        KeyCode::Right | KeyCode::Char('l') => app.nav_right(),
+        KeyCode::Left => app.nav_left(),
+        KeyCode::Right => app.nav_right(),
 
         KeyCode::PageUp => app.page_up(),
         KeyCode::PageDown => app.page_down(),
