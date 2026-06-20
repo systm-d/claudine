@@ -51,7 +51,6 @@ pub fn read_manifest(bundle: &Path) -> Result<Manifest> {
 
 /// Calcule le nouveau cwd (via la table) et le nouveau nom de dossier encodé.
 // Note: également utilisé par la tâche 10 (apply).
-#[allow(dead_code)]
 fn target_dir_name(old_cwd: Option<&str>, table: &RemapTable) -> Option<String> {
     let cwd = old_cwd?;
     let new_cwd = table.apply_to_path(cwd).unwrap_or_else(|| cwd.to_string());
@@ -81,8 +80,10 @@ pub fn dry_run(
                 report.bump("sessions_new", 1);
             }
         }
-        if p.cwd.is_some() && table.apply_to_path(p.cwd.as_deref().unwrap()).is_some() {
-            report.bump("path_rewrites_planned", p.session_ids.len());
+        if let Some(cwd) = p.cwd.as_deref() {
+            if table.apply_to_path(cwd).is_some() {
+                report.bump("path_rewrites_planned", p.session_ids.len());
+            }
         }
     }
     Ok(report)
