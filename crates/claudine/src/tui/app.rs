@@ -161,10 +161,26 @@ impl App {
             ));
         }
 
+        // Plusieurs homes → vue agrégée par défaut (tous visibles dès le départ).
+        let aggregate = homes.len() > 1;
+        let mut projects = Vec::new();
+        let mut project_homes = Vec::new();
+        let mut project_home_bases = Vec::new();
+        let scan_set: Vec<&ClaudeHome> = if aggregate {
+            homes.iter().collect()
+        } else {
+            vec![&homes[0]]
+        };
+        for h in scan_set {
+            if let Ok(ps) = scan_projects(h) {
+                for p in ps {
+                    project_homes.push(h.label.clone());
+                    project_home_bases.push(h.base.clone());
+                    projects.push(p);
+                }
+            }
+        }
         let home = &homes[0];
-        let projects = scan_projects(home).unwrap_or_default();
-        let project_homes = vec![home.label.clone(); projects.len()];
-        let project_home_bases = vec![home.base.clone(); projects.len()];
         let memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
         let config_lines = build_config_lines(home);
         let settings = SettingsForm::load(home);
@@ -182,7 +198,7 @@ impl App {
             projects,
             project_homes,
             project_home_bases,
-            aggregate: false,
+            aggregate,
             browse_view: BrowseView::List,
             confirm_delete: false,
             move_targets: None,
@@ -1256,21 +1272,22 @@ mod tests {
     fn picker_open_move_and_select_switches_home() {
         let (_d, homes) = two_homes();
         let mut app = App::with_homes(homes);
-        assert!(app.is_empty()); // home active = vide
+        // Multi-home → agrégé par défaut (le projet de b est déjà visible).
+        assert!(app.aggregate);
+        assert!(!app.is_empty());
 
         app.open_picker();
         assert!(app.show_picker);
-        // Index 0 = « Tous les homes » ; le home actif (0) est donc à l'entrée 1.
-        assert_eq!(app.picker_idx, 1);
+        // Agrégé → le sélecteur surligne « Tous les homes » (entrée 0).
+        assert_eq!(app.picker_idx, 0);
 
-        // Descend sur la 2e home (entrée 2) puis sélectionne.
-        app.picker_move(1);
+        // Va sur la 2e home (entrée 2 : 0=Tous, 1=home a, 2=home b) puis sélectionne.
+        app.picker_move(2);
         assert_eq!(app.picker_idx, 2);
         app.picker_select();
         assert!(!app.show_picker);
-        assert_eq!(app.active, 1);
         assert!(!app.aggregate);
-        // La home b a un projet → l'app n'est plus vide après reload.
+        assert_eq!(app.active, 1);
         assert!(!app.is_empty());
         assert!(app.status.as_deref().unwrap().contains("Home active"));
     }
