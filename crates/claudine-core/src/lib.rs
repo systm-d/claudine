@@ -10,6 +10,7 @@ pub mod manifest;
 pub mod export;
 pub mod remap;
 pub mod import;
+pub mod settings;
 
 pub use config::{config_path, merge_registered, ClaudineConfig, RegisteredHome};
 pub use error::{CoreError, Report, Result};
@@ -21,6 +22,7 @@ pub use manifest::{Manifest, ManifestProject, SCHEMA_VERSION};
 pub use export::{export, ExportOptions};
 pub use remap::{rewrite_jsonl_line, RemapRule, RemapTable};
 pub use import::{apply, dry_run, read_manifest, ImportOptions};
+pub use settings::{settings_catalog, FieldKind, FieldSpec, SettingsDoc};
 
 #[cfg(test)]
 pub(crate) mod testkit {
