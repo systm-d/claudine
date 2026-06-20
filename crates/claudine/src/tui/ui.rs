@@ -42,18 +42,15 @@ pub fn render(app: &mut App, f: &mut Frame) {
             app.memory_scroll,
             &mut app.memory_viewport,
         ),
-        Section::Config => render_scroll_pane(
-            f,
-            chunks[1],
-            "Config — settings.json / settings.local.json",
-            &app.config_lines,
-            app.config_scroll,
-            &mut app.config_viewport,
-        ),
+        Section::Config => render_config(app, f, chunks[1]),
     }
 
     render_status(app, f, chunks[2]);
     render_footer(app, f, chunks[3]);
+
+    if app.section == Section::Config && app.settings.list_state().is_some() {
+        render_settings_list_editor(app, f, area);
+    }
 
     if app.show_picker {
         render_picker(app, f, area);
@@ -304,6 +301,179 @@ fn render_scroll_pane(
     f.render_widget(para, inner);
 }
 
+/// Section Config : formulaire éditable, ou JSON brut (bascule `r`).
+fn render_config(app: &mut App, f: &mut Frame, area: Rect) {
+    if app.settings.raw() {
+        let lines = app.settings.raw_lines();
+        render_scroll_pane(
+            f,
+            area,
+            "Config — settings.json (brut · r: formulaire)",
+            &lines,
+            app.config_scroll,
+            &mut app.config_viewport,
+        );
+    } else {
+        render_settings_form(app, f, area);
+    }
+}
+
+/// Rend le formulaire de réglages : champs groupés par section, valeur courante,
+/// champ surligné (avec saisie en ligne pour les champs scalaires).
+fn render_settings_form(app: &mut App, f: &mut Frame, area: Rect) {
+    let dirty = app.settings.dirty();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Config — settings.json ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(
+            Line::from(if dirty {
+                " ● modifié · s enregistrer · r JSON "
+            } else {
+                " s enregistrer · r JSON brut "
+            })
+            .right_aligned(),
+        );
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let viewport = inner.height as usize;
+    app.config_viewport = viewport;
+
+    let sel = app.settings.idx();
+    let scalar_buf = if app.settings.editing_scalar() {
+        app.settings.scalar_buf().map(|s| s.to_string())
+    } else {
+        None
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+    let mut sel_line = 0usize;
+    let mut last_section: Option<String> = None;
+    for (i, spec) in app.settings.fields().iter().enumerate() {
+        if last_section.as_deref() != Some(spec.section.as_str()) {
+            if !lines.is_empty() {
+                lines.push(Line::from(""));
+            }
+            lines.push(Line::from(Span::styled(
+                format!("── {} ──", spec.section),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )));
+            last_section = Some(spec.section.clone());
+        }
+        let selected = i == sel;
+        if selected {
+            sel_line = lines.len();
+        }
+        let value = match (selected, &scalar_buf) {
+            (true, Some(buf)) => format!("{buf}▏"),
+            _ => app.settings.value_display(spec),
+        };
+        let label_style = if selected {
+            Style::default()
+                .fg(Color::Black)
+                .bg(ACCENT)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        let value_style = if selected {
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let mut spans = vec![
+            Span::styled(format!("  {:<28} ", spec.label), label_style),
+            Span::styled(value, value_style),
+        ];
+        if let Some(note) = &spec.note {
+            spans.push(Span::styled(format!("  — {note}"), Style::default().fg(DIM)));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    // Auto-défilement pour garder le champ sélectionné visible.
+    let scroll = (sel_line + 1).saturating_sub(viewport);
+    let para = Paragraph::new(Text::from(lines)).scroll((scroll as u16, 0));
+    f.render_widget(para, inner);
+}
+
+/// Popup d'édition d'une liste / map (StringList et KeyValue).
+fn render_settings_list_editor(app: &App, f: &mut Frame, area: Rect) {
+    let Some(le) = app.settings.list_state() else {
+        return;
+    };
+    let spec = &app.settings.fields()[app.settings.idx()];
+    let popup = centered_rect(70, 60, area);
+    f.render_widget(Clear, popup);
+
+    let editing_input = le.input.is_some();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            format!(" {} ", spec.label),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(
+            Line::from(if editing_input {
+                " Entrée valider · Esc annuler "
+            } else {
+                " a ajouter · Enter éditer · d retirer · Esc terminer "
+            })
+            .right_aligned(),
+        );
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let (list_area, input_area) = if editing_input {
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(2)])
+            .split(inner);
+        (rows[0], Some(rows[1]))
+    } else {
+        (inner, None)
+    };
+
+    let items: Vec<ListItem> = if le.items.is_empty() {
+        vec![ListItem::new(Span::styled(
+            "  (vide — « a » pour ajouter)",
+            Style::default().fg(DIM),
+        ))]
+    } else {
+        le.items
+            .iter()
+            .map(|it| ListItem::new(Line::from(it.clone())))
+            .collect()
+    };
+    let list = List::new(items)
+        .highlight_style(
+            Style::default()
+                .bg(ACCENT)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    if !le.items.is_empty() {
+        state.select(Some(le.idx.min(le.items.len() - 1)));
+    }
+    f.render_stateful_widget(list, list_area, &mut state);
+
+    if let (Some(input_area), Some(buf)) = (input_area, &le.input) {
+        let line = Line::from(vec![
+            Span::styled(
+                "Valeur : ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(buf.clone()),
+            Span::styled("▏", Style::default().fg(ACCENT)),
+        ]);
+        f.render_widget(Paragraph::new(line), input_area);
+    }
+}
+
 fn render_status(app: &App, f: &mut Frame, area: Rect) {
     let line = match &app.status {
         Some(msg) => {
@@ -366,6 +536,30 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("?", "aide"),
             ("q", "quitter"),
         ]),
+        Section::Config if app.settings.is_editing() => key_hints(&[
+            ("↑/↓", "naviguer"),
+            ("a", "ajouter"),
+            ("Enter", "éditer"),
+            ("d", "retirer"),
+            ("Esc", "terminer"),
+        ]),
+        Section::Config if app.settings.raw() => key_hints(&[
+            ("Tab/1·2·3", "sections"),
+            ("↑/↓ PgUp/Dn", "défiler"),
+            ("r", "formulaire"),
+            ("H", "homes"),
+            ("?", "aide"),
+            ("q", "quitter"),
+        ]),
+        Section::Config => key_hints(&[
+            ("↑/↓", "champ"),
+            ("Enter", "éditer"),
+            ("←/→", "option"),
+            ("s", "enregistrer"),
+            ("r", "JSON brut"),
+            ("?", "aide"),
+            ("q", "quitter"),
+        ]),
         _ => key_hints(&[
             ("Tab/1·2·3", "sections"),
             ("↑/↓", "défiler"),
@@ -398,6 +592,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("PgUp / PgDn", "défilement par page"),
         ("Home / End", "aller au début / à la fin"),
         ("e", "exporter ~/.claude en .tar.gz"),
+        ("Config", "↑↓ champ · Enter éditer · ←→ option · s enregistrer · r JSON"),
         ("H", "sélecteur de home (a ajouter / d retirer)"),
         ("?", "afficher/masquer cette aide"),
         ("q / Ctrl-C", "quitter"),

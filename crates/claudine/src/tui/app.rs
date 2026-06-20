@@ -10,6 +10,8 @@ use claudine_core::{
 };
 use serde_json::Value;
 
+use crate::tui::settings_form::SettingsForm;
+
 /// Sections de premier niveau, sélectionnables avec Tab / 1,2,3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
@@ -115,6 +117,9 @@ pub struct App {
     pub config_lines: Vec<String>,
     pub config_scroll: usize,
     pub config_viewport: usize,
+
+    // --- Formulaire de réglages (édite le settings.json de la home active) ---
+    pub settings: SettingsForm,
 }
 
 impl App {
@@ -137,6 +142,7 @@ impl App {
         let projects = scan_projects(home).unwrap_or_default();
         let memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
         let config_lines = build_config_lines(home);
+        let settings = SettingsForm::load(home);
         App {
             homes,
             active: 0,
@@ -161,6 +167,7 @@ impl App {
             config_lines,
             config_scroll: 0,
             config_viewport: 1,
+            settings,
         }
     }
 
@@ -219,7 +226,13 @@ impl App {
                 BrowseView::Transcript => self.scroll_transcript(1),
             },
             Section::Memory => self.memory_scroll = scroll_add(self.memory_scroll, 1),
-            Section::Config => self.config_scroll = scroll_add(self.config_scroll, 1),
+            Section::Config => {
+                if self.settings.raw() {
+                    self.config_scroll = scroll_add(self.config_scroll, 1);
+                } else {
+                    self.settings.move_field(1);
+                }
+            }
         }
     }
 
@@ -230,7 +243,13 @@ impl App {
                 BrowseView::Transcript => self.scroll_transcript(-1),
             },
             Section::Memory => self.memory_scroll = self.memory_scroll.saturating_sub(1),
-            Section::Config => self.config_scroll = self.config_scroll.saturating_sub(1),
+            Section::Config => {
+                if self.settings.raw() {
+                    self.config_scroll = self.config_scroll.saturating_sub(1);
+                } else {
+                    self.settings.move_field(-1);
+                }
+            }
         }
     }
 
@@ -342,7 +361,11 @@ impl App {
                 self.memory_scroll = page(self.memory_scroll, self.memory_viewport, true);
             }
             Section::Config => {
-                self.config_scroll = page(self.config_scroll, self.config_viewport, true);
+                if self.settings.raw() {
+                    self.config_scroll = page(self.config_scroll, self.config_viewport, true);
+                } else {
+                    self.settings.move_field(8);
+                }
             }
             _ => {}
         }
@@ -358,7 +381,11 @@ impl App {
                 self.memory_scroll = page(self.memory_scroll, self.memory_viewport, false);
             }
             Section::Config => {
-                self.config_scroll = page(self.config_scroll, self.config_viewport, false);
+                if self.settings.raw() {
+                    self.config_scroll = page(self.config_scroll, self.config_viewport, false);
+                } else {
+                    self.settings.move_field(-8);
+                }
             }
             _ => {}
         }
@@ -370,7 +397,13 @@ impl App {
                 self.transcript_scroll = 0
             }
             Section::Memory => self.memory_scroll = 0,
-            Section::Config => self.config_scroll = 0,
+            Section::Config => {
+                if self.settings.raw() {
+                    self.config_scroll = 0;
+                } else {
+                    self.settings.go_first();
+                }
+            }
             _ => {}
         }
     }
@@ -387,12 +420,61 @@ impl App {
                     .saturating_sub(self.memory_viewport)
             }
             Section::Config => {
-                self.config_scroll = self
-                    .config_lines
-                    .len()
-                    .saturating_sub(self.config_viewport)
+                if self.settings.raw() {
+                    self.config_scroll = self
+                        .config_lines
+                        .len()
+                        .saturating_sub(self.config_viewport);
+                } else {
+                    self.settings.go_last();
+                }
             }
             _ => {}
+        }
+    }
+
+    // --- Config : formulaire de réglages ---
+
+    /// Enter dans la section courante : ouvre un transcript (Browse) ou active le
+    /// champ surligné du formulaire (Config, hors JSON brut).
+    pub fn on_enter(&mut self) {
+        match self.section {
+            Section::Browse => self.open_transcript(),
+            Section::Config if !self.settings.raw() => self.settings.activate(),
+            _ => {}
+        }
+    }
+
+    /// Flèche gauche : focus panneau (Browse) ou cycle Enum en arrière (Config).
+    pub fn nav_left(&mut self) {
+        if self.section == Section::Config && !self.settings.raw() {
+            self.settings.cycle(false);
+        } else {
+            self.focus_left();
+        }
+    }
+
+    /// Flèche droite : focus panneau (Browse) ou cycle Enum en avant (Config).
+    pub fn nav_right(&mut self) {
+        if self.section == Section::Config && !self.settings.raw() {
+            self.settings.cycle(true);
+        } else {
+            self.focus_right();
+        }
+    }
+
+    /// Enregistre le formulaire (section Config uniquement).
+    pub fn save_settings(&mut self) {
+        if self.section == Section::Config {
+            let msg = self.settings.save();
+            self.status = Some(msg);
+        }
+    }
+
+    /// Bascule formulaire ↔ JSON brut (section Config uniquement).
+    pub fn toggle_settings_raw(&mut self) {
+        if self.section == Section::Config {
+            self.settings.toggle_raw();
         }
     }
 
@@ -454,6 +536,7 @@ impl App {
         self.projects = scan_projects(&home).unwrap_or_default();
         self.memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
         self.config_lines = build_config_lines(&home);
+        self.settings = SettingsForm::load(&home);
         self.browse_view = BrowseView::List;
         self.focus = Focus::Projects;
         self.project_idx = 0;

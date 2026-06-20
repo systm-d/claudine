@@ -1,6 +1,7 @@
 //! Interface TUI Claudine : configuration du terminal, boucle d'évènements.
 
 pub mod app;
+pub mod settings_form;
 pub mod ui;
 
 use std::io::{self, Stdout};
@@ -110,11 +111,20 @@ fn handle_key(app: &mut App, key: KeyEvent) {
     // Toute frappe efface une notification de statut affichée.
     app.status = None;
 
+    // Le formulaire de réglages capture les touches pendant l'édition d'un champ.
+    if app.section == Section::Config && app.settings.is_editing() {
+        handle_settings_edit_key(app, key);
+        return;
+    }
+
     match key.code {
         KeyCode::Char('q') => app.quit(),
         KeyCode::Char('?') => app.toggle_help(),
         KeyCode::Char('e') => app.do_export(),
         KeyCode::Char('H') => app.open_picker(),
+        // Section Config : enregistrer / basculer vers le JSON brut.
+        KeyCode::Char('s') => app.save_settings(),
+        KeyCode::Char('r') => app.toggle_settings_raw(),
 
         // Sélection directe de section.
         KeyCode::Char('1') => app.set_section(Section::Browse),
@@ -128,13 +138,13 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc if !app.back() => app.quit(),
         KeyCode::Esc => {}
 
-        KeyCode::Enter => app.open_transcript(),
+        KeyCode::Enter => app.on_enter(),
 
         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
 
-        KeyCode::Left | KeyCode::Char('h') => app.focus_left(),
-        KeyCode::Right | KeyCode::Char('l') => app.focus_right(),
+        KeyCode::Left | KeyCode::Char('h') => app.nav_left(),
+        KeyCode::Right | KeyCode::Char('l') => app.nav_right(),
 
         KeyCode::PageUp => app.page_up(),
         KeyCode::PageDown => app.page_down(),
@@ -168,6 +178,32 @@ fn handle_picker_key(app: &mut App, key: KeyEvent) {
         KeyCode::Down | KeyCode::Char('j') => app.picker_move(1),
         KeyCode::Char('a') => app.picker_start_add(),
         KeyCode::Char('d') => app.picker_remove_highlight(),
+        _ => {}
+    }
+}
+
+/// Touches pendant l'édition d'un champ du formulaire Config.
+fn handle_settings_edit_key(app: &mut App, key: KeyEvent) {
+    let s = &mut app.settings;
+    // Saisie scalaire, ou saisie d'un élément de liste.
+    if s.editing_scalar() || s.editing_list_input() {
+        match key.code {
+            KeyCode::Esc => s.input_cancel(),
+            KeyCode::Enter => s.input_commit(),
+            KeyCode::Backspace => s.input_backspace(),
+            KeyCode::Char(c) => s.input_char(c),
+            _ => {}
+        }
+        return;
+    }
+    // Navigation dans l'éditeur de liste (StringList / KeyValue).
+    match key.code {
+        KeyCode::Esc => s.list_done(),
+        KeyCode::Up | KeyCode::Char('k') => s.list_move(-1),
+        KeyCode::Down | KeyCode::Char('j') => s.list_move(1),
+        KeyCode::Char('a') => s.list_add(),
+        KeyCode::Enter => s.list_begin_edit(),
+        KeyCode::Char('d') => s.list_delete(),
         _ => {}
     }
 }
