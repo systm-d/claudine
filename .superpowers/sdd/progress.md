@@ -36,3 +36,4 @@ TUI: complete (commit b6e719c — ratatui, browse/transcript/mémoire/config/exp
 Multi-home: complete (commits 8e52fb7, 02f194d, f1074e8) — discover_homes + config Claudine (~/.config/claudine/config.json) + CLI --home/homes add|remove + sélecteur TUI (H, ajout/retrait). 53 tests verts.
 Settings form: complete (commits 524dc81 cœur, b35a886 TUI) — section Config éditable via formulaire, préserve clés inconnues, bascule JSON brut. 62 tests verts, clippy clean.
 Vue agrégée: complete (commit ci-dessus) — « Tous les homes » dans le sélecteur, projets fusionnés + étiquetés. 63 tests verts.
+Édition externe: complete (commit ci-dessus) — E ouvre CLAUDE.md/settings.json dans $EDITOR (suspend/restaure le TUI). 64 tests verts.
