@@ -11,7 +11,7 @@ pub mod remap;
 pub mod import;
 
 pub use error::{CoreError, Report, Result};
-pub use home::ClaudeHome;
+pub use home::{discover_homes, discover_homes_in, ClaudeHome};
 pub use pathcodec::encode_cwd;
 pub use model::{Project, SessionMeta};
 pub use scan::{read_session_meta, scan_projects};

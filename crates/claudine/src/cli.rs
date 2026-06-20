@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use claudine_core::{
-    apply, dry_run, export, ClaudeHome, ExportOptions, ImportOptions, RemapRule, RemapTable,
-    Report,
+    apply, discover_homes, dry_run, export, scan_projects, ClaudeHome, ExportOptions,
+    ImportOptions, RemapRule, RemapTable, Report,
 };
 
 pub fn parse_maps(maps: &[String]) -> Result<RemapTable, String> {
@@ -33,8 +33,55 @@ pub fn format_report(report: &Report) -> String {
     out
 }
 
-pub fn run_export(out: PathBuf, no_history: bool) -> Result<(), String> {
-    let home = ClaudeHome::discover().map_err(|e| e.to_string())?;
+/// Résout l'argument `--home` : étiquette d'une home découverte, ou chemin de
+/// système de fichiers. `None` retombe sur `ClaudeHome::discover()`.
+pub fn resolve_home(home_arg: Option<&str>) -> Result<ClaudeHome, String> {
+    let Some(value) = home_arg else {
+        return ClaudeHome::discover().map_err(|e| e.to_string());
+    };
+
+    let homes = discover_homes();
+    if let Some(home) = homes.iter().find(|h| h.label == value) {
+        return Ok(home.clone());
+    }
+
+    let path = Path::new(value);
+    if path.is_dir() {
+        return Ok(ClaudeHome::from_base(path));
+    }
+
+    let labels: Vec<&str> = homes.iter().map(|h| h.label.as_str()).collect();
+    Err(format!(
+        "home introuvable : « {value} » n'est ni une étiquette connue ni un répertoire existant.\nHomes disponibles : {}",
+        if labels.is_empty() {
+            "(aucune)".to_string()
+        } else {
+            labels.join(", ")
+        }
+    ))
+}
+
+pub fn run_homes() -> Result<(), String> {
+    let homes = discover_homes();
+    if homes.is_empty() {
+        println!("Aucune home Claude découverte.");
+        return Ok(());
+    }
+    // La première est le défaut (cf. tri de discover_homes_in).
+    for (i, home) in homes.iter().enumerate() {
+        let n = scan_projects(home).map(|p| p.len()).unwrap_or(0);
+        let mark = if i == 0 { "*" } else { " " };
+        println!(
+            "{mark} {}  {}  ({n} projets)",
+            home.label,
+            home.base.display()
+        );
+    }
+    Ok(())
+}
+
+pub fn run_export(out: PathBuf, no_history: bool, home_arg: Option<String>) -> Result<(), String> {
+    let home = resolve_home(home_arg.as_deref())?;
     let opts = ExportOptions {
         include_history: !no_history,
     };
@@ -49,8 +96,9 @@ pub fn run_import(
     maps: Vec<String>,
     dry_run_only: bool,
     overwrite: bool,
+    home_arg: Option<String>,
 ) -> Result<(), String> {
-    let home = ClaudeHome::discover().map_err(|e| e.to_string())?;
+    let home = resolve_home(home_arg.as_deref())?;
     let table = parse_maps(&maps)?;
     let opts = ImportOptions { overwrite };
     let report = if dry_run_only {
@@ -80,5 +128,18 @@ mod tests {
     #[test]
     fn parse_maps_rejects_missing_equals() {
         assert!(parse_maps(&["noeq".to_string()]).is_err());
+    }
+
+    #[test]
+    fn resolve_home_accepts_existing_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = resolve_home(Some(dir.path().to_str().unwrap())).unwrap();
+        assert_eq!(home.base, dir.path());
+    }
+
+    #[test]
+    fn resolve_home_rejects_unknown_value() {
+        let err = resolve_home(Some("/n/existe/pas/du/tout-claudine")).unwrap_err();
+        assert!(err.contains("home introuvable"));
     }
 }
