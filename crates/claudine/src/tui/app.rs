@@ -8,8 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use claudine_core::{
     apply as import_apply, decode_encoded_to_path, discover_homes, dry_run as import_dry_run,
     empty_trash, export, find_in_session, list_trash, move_session, purge_trash_item,
-    read_extensions, restore_session, scan_projects, trash_session, ClaudeHome, ClaudineConfig,
-    Extensions, ExportOptions, ImportOptions, Project, RemapTable, SessionMeta,
+    read_extensions, restore_session, scan_projects, trash_project, trash_session, ClaudeHome,
+    ClaudineConfig, Extensions, ExportOptions, ImportOptions, Project, RemapTable, SessionMeta,
 };
 use serde_json::Value;
 
@@ -114,6 +114,13 @@ pub struct TrashEntry {
     pub label: String,
 }
 
+/// Cible d'une suppression vers la corbeille : une session, ou un projet entier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteKind {
+    Session,
+    Project,
+}
+
 /// Portée d'une purge définitive de la corbeille.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PurgeScope {
@@ -189,8 +196,8 @@ pub struct App {
     pub browse_view: BrowseView,
 
     // --- Ménage (suppression / déplacement de sessions) ---
-    /// Confirmation de suppression (corbeille) de la session sélectionnée.
-    pub confirm_delete: bool,
+    /// Confirmation de suppression (corbeille) en attente ; `None` = aucune.
+    pub confirm_delete: Option<DeleteKind>,
     /// Cibles de déplacement proposées (popup) ; `None` = popup fermé.
     pub move_targets: Option<Vec<MoveTarget>>,
     pub move_idx: usize,
@@ -290,7 +297,7 @@ impl App {
             aggregate,
             collapsed: HashSet::new(),
             browse_view: BrowseView::List,
-            confirm_delete: false,
+            confirm_delete: None,
             move_targets: None,
             move_idx: 0,
             search: None,
@@ -1048,34 +1055,69 @@ impl App {
             && self.focus == Focus::Sessions
     }
 
+    /// `d` en vue liste : supprime la session (focus Sessions) ou le projet
+    /// entier (focus Projets) — toujours vers la corbeille, après confirmation.
+    pub fn request_delete(&mut self) {
+        if self.section != Section::Browse || self.browse_view != BrowseView::List {
+            return;
+        }
+        match self.focus {
+            Focus::Sessions => self.request_delete_session(),
+            Focus::Projects => self.request_delete_project(),
+        }
+    }
+
     /// Demande la confirmation de suppression de la session sélectionnée.
     pub fn request_delete_session(&mut self) {
         if self.on_sessions() && self.selected_session().is_some() {
-            self.confirm_delete = true;
+            self.confirm_delete = Some(DeleteKind::Session);
+        }
+    }
+
+    /// Demande la confirmation de suppression du projet entier sélectionné
+    /// (sessions incluses, restaurables). Couvre les projets vides « 0 sess. ».
+    pub fn request_delete_project(&mut self) {
+        if self.focus == Focus::Projects && self.selected_project().is_some() {
+            self.confirm_delete = Some(DeleteKind::Project);
         }
     }
 
     pub fn confirm_delete_cancel(&mut self) {
-        self.confirm_delete = false;
+        self.confirm_delete = None;
     }
 
-    /// Confirme : déplace la session vers la corbeille du home, recharge.
+    /// Confirme : déplace la session ou le projet vers la corbeille, recharge.
     pub fn confirm_delete_apply(&mut self) {
-        self.confirm_delete = false;
-        let (encoded, path) = match (self.selected_project(), self.selected_session()) {
-            (Some(p), Some(s)) => (p.encoded_name.clone(), s.path.clone()),
-            _ => return,
+        let kind = match self.confirm_delete.take() {
+            Some(k) => k,
+            None => return,
         };
         let base = self
             .project_home_bases
             .get(self.project_idx)
             .cloned()
             .unwrap_or_else(|| self.home().base.clone());
-        match trash_session(&base, &encoded, &path) {
-            Ok(dest) => {
+        let result = match kind {
+            DeleteKind::Session => {
+                let (encoded, path) = match (self.selected_project(), self.selected_session()) {
+                    (Some(p), Some(s)) => (p.encoded_name.clone(), s.path.clone()),
+                    _ => return,
+                };
+                trash_session(&base, &encoded, &path).map(|d| format!("Session → corbeille : {}", d.display()))
+            }
+            DeleteKind::Project => {
+                let encoded = match self.selected_project() {
+                    Some(p) => p.encoded_name.clone(),
+                    None => return,
+                };
+                trash_project(&base, &encoded).map(|_| "Projet → corbeille".to_string())
+            }
+        };
+        match result {
+            Ok(msg) => {
                 self.reload_projects();
                 self.clamp_browse_indices();
-                self.status = Some(format!("Session → corbeille : {}", dest.display()));
+                self.status = Some(msg);
             }
             Err(e) => self.status = Some(format!("Échec suppression : {e}")),
         }
@@ -2078,13 +2120,45 @@ mod tests {
         assert_eq!(app.focus, Focus::Sessions);
 
         app.request_delete_session();
-        assert!(app.confirm_delete);
+        assert_eq!(app.confirm_delete, Some(DeleteKind::Session));
         app.confirm_delete_apply();
-        assert!(!app.confirm_delete);
+        assert!(app.confirm_delete.is_none());
 
         assert_eq!(app.session_count(), 0, "session partie en corbeille");
         assert!(dir.path().join("trash").exists(), "corbeille créée");
         assert!(!pdir.join("aaaa.jsonl").exists(), "original retiré");
+    }
+
+    #[test]
+    fn delete_empty_project_from_projects_focus() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        // Projet « vide » (0 sess., juste un index) — le cas du ~ (0 sess.).
+        let empty = base.join("projects").join("-home-kdelfour");
+        fs::create_dir_all(&empty).unwrap();
+        fs::write(empty.join("sessions-index.json"), "{}").unwrap();
+        // Un projet avec session, qui doit survivre.
+        let full = base.join("projects").join("-home-x-proj");
+        fs::create_dir_all(&full).unwrap();
+        fs::write(full.join("a.jsonl"), "{\"cwd\":\"/home/x/proj\"}\n").unwrap();
+
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        assert_eq!(app.focus, Focus::Projects);
+        let idx = app
+            .projects
+            .iter()
+            .position(|p| p.encoded_name == "-home-kdelfour")
+            .unwrap();
+        app.project_idx = idx;
+
+        app.request_delete();
+        assert_eq!(app.confirm_delete, Some(DeleteKind::Project));
+        app.confirm_delete_apply();
+        assert!(app.confirm_delete.is_none());
+
+        assert!(!empty.exists(), "projet vide envoyé en corbeille");
+        assert!(full.join("a.jsonl").exists(), "projet non vide intact");
+        assert!(base.join("trash").exists(), "corbeille créée");
     }
 
     #[test]

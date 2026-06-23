@@ -131,7 +131,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
     }
 
     // Confirmation de suppression.
-    if app.confirm_delete {
+    if app.confirm_delete.is_some() {
         match key.code {
             KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
             | KeyCode::Enter => app.confirm_delete_apply(),
@@ -272,7 +272,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => app.on_enter(),
 
         // Ménage des sessions (focus Sessions dans Browse).
-        KeyCode::Char('d') | KeyCode::Delete => app.request_delete_session(),
+        KeyCode::Char('d') | KeyCode::Delete => app.request_delete(),
         KeyCode::Char('m') => app.request_move_session(),
 
         // Repliage des groupes (homes) en vue agrégée.

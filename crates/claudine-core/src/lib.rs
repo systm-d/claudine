@@ -26,8 +26,8 @@ pub use export::{export, ExportOptions};
 pub use remap::{rewrite_jsonl_line, RemapRule, RemapTable};
 pub use import::{apply, dry_run, read_manifest, ImportOptions};
 pub use housekeeping::{
-    empty_trash, list_trash, move_session, purge_trash_item, restore_session, trash_session,
-    TrashItem,
+    empty_trash, list_trash, move_session, purge_trash_item, restore_session, trash_project,
+    trash_session, TrashItem,
 };
 pub use search::find_in_session;
 pub use settings::{settings_catalog, FieldKind, FieldSpec, SettingsDoc};

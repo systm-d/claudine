@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{App, BrowseView, Focus, PickerMode, PurgeScope, Section};
+use super::app::{App, BrowseView, DeleteKind, Focus, PickerMode, PurgeScope, Section};
 use crate::tui::app::{human_size, humanize_path};
 use claudine_core::scan_projects;
 
@@ -60,7 +60,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
         render_settings_list_editor(app, f, area);
     }
 
-    if app.confirm_delete {
+    if app.confirm_delete.is_some() {
         render_confirm_delete(app, f, area);
     }
     if app.move_targets.is_some() {
@@ -705,7 +705,7 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
     }
 
     // Modales de ménage : raccourcis prioritaires.
-    if app.confirm_delete {
+    if app.confirm_delete.is_some() {
         f.render_widget(
             Paragraph::new(Line::from(key_hints(&[
                 ("o", "oui (corbeille)"),
@@ -872,7 +872,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("Espace", "replier / déplier le home courant (agrégé)"),
         ("z", "tout replier / tout déplier (agrégé)"),
         ("/", "rechercher (live chemin/id · Tab = contenu)"),
-        ("d / Suppr", "session → corbeille (récupérable)"),
+        ("d / Suppr", "→ corbeille : session (panneau Sessions) ou projet (panneau Projets)"),
         ("m", "déplacer la session vers un autre projet"),
         ("c", "corbeille : restaurer / supprimer déf. / vider"),
         ("Esc", "retour (transcript) sinon quitter"),
@@ -1001,14 +1001,40 @@ fn render_picker(app: &App, f: &mut Frame, area: Rect) {
 
 /// Popup de confirmation de suppression (mise en corbeille) d'une session.
 fn render_confirm_delete(app: &App, f: &mut Frame, area: Rect) {
-    let id = app
-        .selected_session()
-        .map(|s| s.id.chars().take(8).collect::<String>())
-        .unwrap_or_default();
-    let popup = centered_rect(54, 34, area);
+    let kind = app.confirm_delete.unwrap_or(DeleteKind::Session);
+    let (title, target_line, prompt) = match kind {
+        DeleteKind::Session => {
+            let id = app
+                .selected_session()
+                .map(|s| s.id.chars().take(8).collect::<String>())
+                .unwrap_or_default();
+            (
+                " Supprimer la session ",
+                format!("  Session {id}"),
+                "  La déplacer vers la corbeille du home ?".to_string(),
+            )
+        }
+        DeleteKind::Project => {
+            let (name, n) = app
+                .selected_project()
+                .map(|p| {
+                    (
+                        humanize_path(p.cwd.as_deref().unwrap_or(&p.encoded_name)),
+                        p.sessions.len(),
+                    )
+                })
+                .unwrap_or_default();
+            (
+                " Supprimer le projet ",
+                format!("  Projet {name}  ({n} sess.)"),
+                "  Déplacer tout le projet vers la corbeille ?".to_string(),
+            )
+        }
+    };
+    let popup = centered_rect(58, 36, area);
     f.render_widget(Clear, popup);
     let block = Block::default().borders(Borders::ALL).title(Span::styled(
-        " Supprimer la session ",
+        title,
         Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
     ));
     let inner = block.inner(popup);
@@ -1016,11 +1042,11 @@ fn render_confirm_delete(app: &App, f: &mut Frame, area: Rect) {
     let lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            format!("  Session {id}"),
+            target_line,
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  La déplacer vers la corbeille du home ?"),
+        Line::from(prompt),
         Line::from(Span::styled(
             "  (récupérable dans <home>/trash/…)",
             Style::default().fg(DIM),

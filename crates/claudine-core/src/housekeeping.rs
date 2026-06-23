@@ -44,6 +44,44 @@ pub fn trash_session(home_base: &Path, encoded: &str, session_path: &Path) -> Re
     Ok(dest)
 }
 
+/// Met **tout le dossier projet** `projects/<encoded>` à la corbeille
+/// (récupérable), sous `trash/<horodatage>/<encoded>/`. Les sessions y restent
+/// individuellement restaurables (la disposition correspond à `list_trash`).
+/// Ne supprime jamais définitivement. Renvoie le chemin en corbeille.
+pub fn trash_project(home_base: &Path, encoded: &str) -> Result<PathBuf> {
+    let src = home_base.join("projects").join(encoded);
+    if !src.exists() {
+        return Err(CoreError::BundleFormat(format!(
+            "projet introuvable : {}",
+            src.display()
+        )));
+    }
+    let dest_root = home_base.join("trash").join(nanos().to_string());
+    fs::create_dir_all(&dest_root).map_err(|e| CoreError::io(&dest_root, e))?;
+    let dest = dest_root.join(encoded);
+    // `rename` si possible, sinon copie récursive + suppression (cross-device).
+    if fs::rename(&src, &dest).is_err() {
+        copy_dir_all(&src, &dest)?;
+        fs::remove_dir_all(&src).map_err(|e| CoreError::io(&src, e))?;
+    }
+    Ok(dest)
+}
+
+fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
+    fs::create_dir_all(dst).map_err(|e| CoreError::io(dst, e))?;
+    for entry in fs::read_dir(src).map_err(|e| CoreError::io(src, e))? {
+        let entry = entry.map_err(|e| CoreError::io(src, e))?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir_all(&from, &to)?;
+        } else {
+            fs::copy(&from, &to).map_err(|e| CoreError::io(&from, e))?;
+        }
+    }
+    Ok(())
+}
+
 /// Déplace une session vers un autre projet (éventuellement un autre home) :
 /// réécrit `old_cwd` → `target_cwd` dans le contenu, place le fichier dans le
 /// dossier encodé de `target_cwd`, puis retire l'original. Renvoie la destination.
@@ -286,6 +324,45 @@ mod tests {
         assert_eq!(restored, sess);
         assert!(sess.exists(), "session restaurée à sa place");
         assert!(!items[0].path.exists(), "retirée de la corbeille");
+    }
+
+    #[test]
+    fn trash_project_moves_whole_dir_and_sessions_stay_restorable() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let pdir = base.join("projects").join("-home-x-proj");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(pdir.join("a.jsonl"), "{\"cwd\":\"/home/x/proj\"}\n").unwrap();
+        fs::write(pdir.join("b.jsonl"), "{\"cwd\":\"/home/x/proj\"}\n").unwrap();
+        // Fichier auxiliaire (non-session) toléré.
+        fs::write(pdir.join("sessions-index.json"), "{}").unwrap();
+
+        trash_project(base, "-home-x-proj").unwrap();
+        assert!(!pdir.exists(), "le dossier projet a disparu de projects/");
+
+        // Les deux sessions apparaissent dans la corbeille et sont restaurables.
+        let items = list_trash(base);
+        assert_eq!(items.len(), 2);
+        for it in &items {
+            assert_eq!(it.encoded, "-home-x-proj");
+            restore_session(&it.path, base).unwrap();
+        }
+        assert!(pdir.join("a.jsonl").exists());
+        assert!(pdir.join("b.jsonl").exists());
+    }
+
+    #[test]
+    fn trash_project_handles_empty_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let pdir = base.join("projects").join("-home-kdelfour");
+        fs::create_dir_all(&pdir).unwrap();
+        // Projet « vide » : aucun .jsonl, juste un index (cas du bug ~ (0 sess.)).
+        fs::write(pdir.join("sessions-index.json"), "{}").unwrap();
+
+        let dest = trash_project(base, "-home-kdelfour").unwrap();
+        assert!(!pdir.exists(), "projet vide retiré");
+        assert!(dest.join("sessions-index.json").exists(), "contenu préservé en corbeille");
     }
 
     #[test]
