@@ -1,5 +1,6 @@
 //! État applicatif de la TUI Claudine et logique de navigation.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -159,6 +160,9 @@ pub struct App {
     pub project_home_bases: Vec<PathBuf>,
     /// Vue agrégée : projets de tous les homes à la fois.
     pub aggregate: bool,
+    /// Homes repliés (par chemin de base) : leurs projets sont masqués dans la
+    /// liste agrégée. Persiste entre rechargements (les homes ne changent pas).
+    pub collapsed: HashSet<String>,
     pub browse_view: BrowseView,
 
     // --- Ménage (suppression / déplacement de sessions) ---
@@ -251,6 +255,7 @@ impl App {
             project_homes,
             project_home_bases,
             aggregate,
+            collapsed: HashSet::new(),
             browse_view: BrowseView::List,
             confirm_delete: false,
             move_targets: None,
@@ -322,8 +327,132 @@ impl App {
 
     // --- Browse : navigation listes ---
 
-    fn project_count(&self) -> usize {
-        self.projects.len()
+    // --- Repliage des groupes (homes) en vue agrégée ---
+
+    fn base_key(&self, i: usize) -> Option<String> {
+        self.project_home_bases
+            .get(i)
+            .map(|b| b.to_string_lossy().into_owned())
+    }
+
+    /// Le home du projet `i` est-il replié ?
+    pub fn is_home_collapsed(&self, i: usize) -> bool {
+        self.base_key(i)
+            .map(|k| self.collapsed.contains(&k))
+            .unwrap_or(false)
+    }
+
+    /// `i` est-il le premier projet de son groupe (home) ? Les groupes sont
+    /// contigus, donc c'est le cas si le projet précédent a un autre home.
+    fn is_group_anchor(&self, i: usize) -> bool {
+        match (
+            self.project_home_bases.get(i),
+            i.checked_sub(1).and_then(|p| self.project_home_bases.get(p)),
+        ) {
+            (Some(b), Some(prev)) => b != prev,
+            (Some(_), None) => true,
+            _ => false,
+        }
+    }
+
+    /// Index du premier projet du groupe (home) auquel `i` appartient.
+    fn group_anchor(&self, i: usize) -> usize {
+        let Some(base) = self.project_home_bases.get(i).cloned() else {
+            return i;
+        };
+        let mut j = i;
+        while j > 0 && self.project_home_bases.get(j - 1) == Some(&base) {
+            j -= 1;
+        }
+        j
+    }
+
+    /// Un projet est navigable s'il est visible (home déplié), ou s'il est
+    /// l'ancre d'un groupe replié (on reste posé sur l'en-tête, repliable).
+    fn proj_navigable(&self, i: usize) -> bool {
+        if !self.aggregate {
+            return i < self.projects.len();
+        }
+        if !self.is_home_collapsed(i) {
+            true
+        } else {
+            self.is_group_anchor(i)
+        }
+    }
+
+    /// Projet navigable suivant dans la direction `delta`, en bornant aux
+    /// extrémités (pas de bouclage, cohérent avec le reste de la navigation).
+    fn next_navigable_project(&self, from: usize, delta: i32) -> usize {
+        let n = self.projects.len();
+        if n == 0 {
+            return from;
+        }
+        if delta >= 0 {
+            ((from + 1)..n).find(|&j| self.proj_navigable(j)).unwrap_or(from)
+        } else {
+            (0..from).rev().find(|&j| self.proj_navigable(j)).unwrap_or(from)
+        }
+    }
+
+    fn edge_navigable_project(&self, last: bool) -> usize {
+        let n = self.projects.len();
+        let range: Vec<usize> = if last {
+            (0..n).rev().collect()
+        } else {
+            (0..n).collect()
+        };
+        range
+            .into_iter()
+            .find(|&i| self.proj_navigable(i))
+            .unwrap_or(0)
+    }
+
+    /// Replie / déplie le home du projet courant (vue agrégée, focus Projets).
+    pub fn toggle_collapse_current(&mut self) {
+        if !self.aggregate
+            || self.section != Section::Browse
+            || self.browse_view != BrowseView::List
+            || self.focus != Focus::Projects
+        {
+            return;
+        }
+        let Some(key) = self.base_key(self.project_idx) else {
+            return;
+        };
+        if self.collapsed.remove(&key) {
+            self.status = Some("Groupe déplié".to_string());
+        } else {
+            self.collapsed.insert(key);
+            // On se pose sur l'ancre (en-tête) qui reste navigable.
+            self.project_idx = self.group_anchor(self.project_idx);
+            self.session_idx = 0;
+            self.status = Some("Groupe replié (Espace pour déplier)".to_string());
+        }
+    }
+
+    /// Replie tous les homes sauf celui du projet courant ; ou déplie tout si
+    /// tout était déjà replié.
+    pub fn toggle_collapse_all(&mut self) {
+        if !self.aggregate
+            || self.section != Section::Browse
+            || self.browse_view != BrowseView::List
+        {
+            return;
+        }
+        let all_bases: HashSet<String> = self
+            .project_home_bases
+            .iter()
+            .map(|b| b.to_string_lossy().into_owned())
+            .collect();
+        if all_bases.iter().all(|k| self.collapsed.contains(k)) {
+            self.collapsed.clear();
+            self.status = Some("Tous les groupes dépliés".to_string());
+        } else {
+            self.collapsed = all_bases;
+            self.project_idx = self.group_anchor(self.project_idx);
+            self.session_idx = 0;
+            self.status = Some("Tous les groupes repliés".to_string());
+        }
     }
 
     fn session_count(&self) -> usize {
@@ -367,8 +496,8 @@ impl App {
     fn browse_move(&mut self, delta: i32) {
         match self.focus {
             Focus::Projects => {
-                let n = self.project_count();
-                self.project_idx = step(self.project_idx, delta, n);
+                // Saute les projets masqués par un groupe replié.
+                self.project_idx = self.next_navigable_project(self.project_idx, delta);
                 // Le changement de projet réinitialise la sélection de session.
                 self.session_idx = 0;
             }
@@ -383,8 +512,7 @@ impl App {
     fn browse_to(&mut self, to_last: bool) {
         match self.focus {
             Focus::Projects => {
-                let n = self.project_count();
-                self.project_idx = if to_last { n.saturating_sub(1) } else { 0 };
+                self.project_idx = self.edge_navigable_project(to_last);
                 self.session_idx = 0;
             }
             Focus::Sessions => {
@@ -737,6 +865,11 @@ impl App {
     fn clamp_browse_indices(&mut self) {
         if self.project_idx >= self.projects.len() {
             self.project_idx = self.projects.len().saturating_sub(1);
+        }
+        // Si la sélection est tombée dans un groupe replié (hors ancre), la
+        // ramener sur l'ancre du groupe pour rester navigable.
+        if !self.projects.is_empty() && !self.proj_navigable(self.project_idx) {
+            self.project_idx = self.group_anchor(self.project_idx);
         }
         let sc = self.session_count();
         if self.session_idx >= sc {
@@ -1640,6 +1773,58 @@ mod tests {
         (dir, homes)
     }
 
+    fn two_homes_two_projects_each() -> (tempfile::TempDir, Vec<ClaudeHome>) {
+        let dir = tempfile::tempdir().unwrap();
+        for (home, encs) in [("a", ["-home-a1", "-home-a2"]), ("b", ["-home-b1", "-home-b2"])] {
+            for enc in encs {
+                let pd = dir.path().join(home).join("projects").join(enc);
+                fs::create_dir_all(&pd).unwrap();
+                fs::write(
+                    pd.join("s.jsonl"),
+                    format!(r#"{{"type":"user","cwd":"/home/{enc}"}}"#),
+                )
+                .unwrap();
+            }
+        }
+        let homes = vec![
+            ClaudeHome::from_base(dir.path().join("a")),
+            ClaudeHome::from_base(dir.path().join("b")),
+        ];
+        (dir, homes)
+    }
+
+    #[test]
+    fn collapse_hides_group_projects_and_navigates_anchors() {
+        let (_d, homes) = two_homes_two_projects_each();
+        let mut app = App::with_homes(homes);
+        assert!(app.aggregate);
+        assert_eq!(app.projects.len(), 4);
+        // [0,1] = home a, [2,3] = home b (contigus par home).
+
+        // Replie le home courant (a) : on reste sur l'ancre 0.
+        app.toggle_collapse_current();
+        assert!(app.is_home_collapsed(0));
+        assert_eq!(app.project_idx, 0);
+
+        // Descendre saute les projets repliés de a → première ancre de b.
+        app.move_down();
+        assert_eq!(app.project_idx, 2, "saute les projets repliés");
+
+        // Replie b aussi : seules les ancres 0 et 2 restent navigables.
+        app.toggle_collapse_current();
+        assert!(app.is_home_collapsed(2));
+        app.move_down();
+        assert_eq!(app.project_idx, 2, "borné : dernière ancre navigable");
+        app.move_up();
+        assert_eq!(app.project_idx, 0, "remonte vers l'ancre précédente");
+
+        // Tout était replié → tout déplier ; les projets internes réapparaissent.
+        app.toggle_collapse_all();
+        assert!(app.collapsed.is_empty());
+        app.move_down();
+        assert_eq!(app.project_idx, 1, "projet interne de nouveau navigable");
+    }
+
     #[test]
     fn picker_open_move_and_select_switches_home() {
         let (_d, homes) = two_homes();
@@ -1956,3 +2141,4 @@ mod tests {
         assert!(app.status.as_deref().unwrap().contains("invalide"));
     }
 }
+

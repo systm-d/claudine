@@ -164,6 +164,8 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
     let mut proj_items: Vec<ListItem> = Vec::new();
     let mut row_of_project: Vec<usize> = Vec::with_capacity(app.projects.len());
     let mut last_home: Option<String> = None;
+    let mut group_collapsed = false;
+    let mut header_row = 0usize;
     for (i, p) in app.projects.iter().enumerate() {
         if app.aggregate {
             let home = app.project_homes.get(i).cloned().unwrap_or_default();
@@ -173,11 +175,21 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
                     .iter()
                     .filter(|h| h.as_str() == home.as_str())
                     .count();
+                group_collapsed = app.is_home_collapsed(i);
+                let marker = if group_collapsed { "▸" } else { "▾" };
+                let state = if group_collapsed { " — replié" } else { "" };
+                header_row = proj_items.len();
                 proj_items.push(ListItem::new(Line::from(Span::styled(
-                    format!("▾ {home}  ({count} projets)"),
+                    format!("{marker} {home}  ({count} projets){state}"),
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                 ))));
                 last_home = Some(home);
+            }
+            // Groupe replié : les projets sont masqués ; ils pointent vers
+            // l'en-tête (qui représente le groupe et reste sélectionnable).
+            if group_collapsed {
+                row_of_project.push(header_row);
+                continue;
             }
         }
         row_of_project.push(proj_items.len());
@@ -632,6 +644,18 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("?", "aide"),
             ("q", "quitter"),
         ]),
+        Section::Browse if app.aggregate => key_hints(&[
+            ("←/→", "panneau"),
+            ("↑/↓", "naviguer"),
+            ("Enter", "ouvrir"),
+            ("Espace/z", "replier"),
+            ("d", "suppr."),
+            ("m", "déplacer"),
+            ("/", "chercher"),
+            ("c", "corbeille"),
+            ("h", "homes"),
+            ("?", "aide"),
+        ]),
         Section::Browse => key_hints(&[
             ("Tab/1·2·3", "sections"),
             ("←/→", "panneau"),
@@ -706,6 +730,8 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
+        ("Espace", "replier / déplier le home courant (agrégé)"),
+        ("z", "tout replier / tout déplier (agrégé)"),
         ("/", "rechercher (live chemin/id · Tab = contenu)"),
         ("d / Suppr", "session → corbeille (récupérable)"),
         ("m", "déplacer la session vers un autre projet"),

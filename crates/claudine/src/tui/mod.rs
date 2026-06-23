@@ -246,6 +246,10 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('d') | KeyCode::Delete => app.request_delete_session(),
         KeyCode::Char('m') => app.request_move_session(),
 
+        // Repliage des groupes (homes) en vue agrégée.
+        KeyCode::Char(' ') => app.toggle_collapse_current(),
+        KeyCode::Char('z') => app.toggle_collapse_all(),
+
         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
 
