@@ -188,6 +188,19 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Bascule des plugins (modal).
+    if app.plugins_toggle.is_some() {
+        match key.code {
+            KeyCode::Esc => app.plugins_toggle_cancel(),
+            KeyCode::Up | KeyCode::Char('k') => app.plugins_toggle_move(-1),
+            KeyCode::Down | KeyCode::Char('j') => app.plugins_toggle_move(1),
+            KeyCode::Char(' ') => app.plugins_toggle_flip(),
+            KeyCode::Char('s') => app.plugins_toggle_save(),
+            _ => {}
+        }
+        return;
+    }
+
     // Assistant d'import : saisie du chemin, puis aperçu/confirmation.
     if app.import.is_some() {
         let in_preview = app
@@ -277,6 +290,9 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {}
 
         KeyCode::Enter => app.on_enter(),
+
+        // Section Extensions : modal de bascule des plugins.
+        KeyCode::Char('p') => app.open_plugins_toggle(),
 
         // Ménage des sessions (focus Sessions dans Browse).
         KeyCode::Char('d') | KeyCode::Delete => app.request_delete(),

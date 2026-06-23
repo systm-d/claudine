@@ -79,6 +79,9 @@ pub fn render(app: &mut App, f: &mut Frame) {
     if app.hooks_editor.is_some() {
         render_hooks_editor(app, f, area);
     }
+    if app.plugins_toggle.is_some() {
+        render_plugins_toggle(app, f, area);
+    }
 
     if app.show_picker {
         render_picker(app, f, area);
@@ -1514,6 +1517,47 @@ fn render_hooks_editor(app: &App, f: &mut Frame, area: Rect) {
     }
 
     f.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+/// Modal de bascule activer/désactiver des plugins.
+fn render_plugins_toggle(app: &App, f: &mut Frame, area: Rect) {
+    let Some(pt) = &app.plugins_toggle else {
+        return;
+    };
+    let popup = centered_rect(70, 60, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Plugins — activer / désactiver ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(" Espace bascule · s enregistrer · Esc fermer ").right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let items: Vec<ListItem> = pt
+        .items
+        .iter()
+        .map(|it| {
+            let (mark, mstyle) = if it.enabled {
+                ("✓", Style::default().fg(Color::Green))
+            } else {
+                ("✗", Style::default().fg(DIM))
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!(" {mark} "), mstyle),
+                Span::raw(it.name.clone()),
+            ]))
+        })
+        .collect();
+    let list = List::new(items)
+        .highlight_style(selection_style(true))
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    if !pt.items.is_empty() {
+        state.select(Some(pt.idx.min(pt.items.len() - 1)));
+    }
+    f.render_stateful_widget(list, inner, &mut state);
 }
 
 // --- Helpers de style/layout ---

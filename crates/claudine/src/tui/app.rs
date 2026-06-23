@@ -8,9 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use claudine_core::{
     apply as import_apply, decode_encoded_to_path, discover_homes, dry_run as import_dry_run,
     empty_trash, export, find_in_session, list_trash, move_session, purge_trash_item,
-    read_extensions, read_hook_groups, restore_trash_entry, scan_projects, trash_project,
-    trash_session, write_hooks, ClaudeHome, ClaudineConfig, Extensions, ExportOptions,
-    ImportOptions, Project, RemapTable, SessionMeta,
+    read_extensions, read_hook_groups, restore_trash_entry, scan_projects, set_plugin_enabled,
+    trash_project, trash_session, write_hooks, ClaudeHome, ClaudineConfig, Extensions,
+    ExportOptions, ImportOptions, Project, RemapTable, SessionMeta,
 };
 use serde_json::Value;
 
@@ -141,6 +141,19 @@ pub struct TrashState {
     pub confirm: Option<PurgeScope>,
 }
 
+/// Une ligne du modal de bascule des plugins.
+#[derive(Debug, Clone)]
+pub struct PluginToggleItem {
+    pub name: String,
+    pub enabled: bool,
+}
+
+/// État du modal de bascule des plugins.
+pub struct PluginsToggle {
+    pub items: Vec<PluginToggleItem>,
+    pub idx: usize,
+}
+
 /// Aperçu d'un import (résultat d'un `dry_run`).
 #[derive(Debug, Clone, Default)]
 pub struct ImportPreview {
@@ -214,6 +227,8 @@ pub struct App {
     pub import: Option<ImportState>,
     /// Éditeur de hooks (modal) ; `None` = fermé.
     pub hooks_editor: Option<HooksEditor>,
+    /// Modal de bascule des plugins (activer/désactiver) ; `None` = fermé.
+    pub plugins_toggle: Option<PluginsToggle>,
     pub focus: Focus,
     pub project_idx: usize,
     pub session_idx: usize,
@@ -309,6 +324,7 @@ impl App {
             trash_view: None,
             import: None,
             hooks_editor: None,
+            plugins_toggle: None,
             focus: Focus::Projects,
             project_idx: 0,
             session_idx: 0,
@@ -1017,6 +1033,66 @@ impl App {
                 self.status = Some(format!("Échec enregistrement hooks : {e}"));
             }
         }
+    }
+
+    // --- Modal de bascule des plugins ---
+
+    pub fn open_plugins_toggle(&mut self) {
+        if self.section != Section::Extensions {
+            return;
+        }
+        let items: Vec<PluginToggleItem> = self
+            .extensions
+            .plugins
+            .iter()
+            .map(|p| PluginToggleItem {
+                name: p.name.clone(),
+                enabled: p.enabled,
+            })
+            .collect();
+        if items.is_empty() {
+            self.status = Some("Aucun plugin installé".to_string());
+            return;
+        }
+        self.plugins_toggle = Some(PluginsToggle { items, idx: 0 });
+    }
+
+    pub fn plugins_toggle_cancel(&mut self) {
+        self.plugins_toggle = None;
+    }
+
+    pub fn plugins_toggle_move(&mut self, delta: i32) {
+        if let Some(pt) = &mut self.plugins_toggle {
+            pt.idx = step(pt.idx, delta, pt.items.len());
+        }
+    }
+
+    pub fn plugins_toggle_flip(&mut self) {
+        if let Some(pt) = &mut self.plugins_toggle {
+            if let Some(it) = pt.items.get_mut(pt.idx) {
+                it.enabled = !it.enabled;
+            }
+        }
+    }
+
+    /// Écrit l'état (un set_plugin_enabled par plugin) puis recharge.
+    pub fn plugins_toggle_save(&mut self) {
+        let Some(pt) = self.plugins_toggle.take() else {
+            return;
+        };
+        let home = self.home().clone();
+        let mut err = None;
+        for it in &pt.items {
+            if let Err(e) = set_plugin_enabled(&home, &it.name, it.enabled) {
+                err = Some(e);
+                break;
+            }
+        }
+        self.reload_files();
+        self.status = Some(match err {
+            Some(e) => format!("Échec enregistrement plugins : {e}"),
+            None => "Plugins enregistrés".to_string(),
+        });
     }
 
     // --- Sélecteur de home ---
@@ -2569,6 +2645,36 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].event, "PreToolUse");
         assert_eq!(groups[0].commands[0].command, "echo hi");
+    }
+
+    #[test]
+    fn plugins_toggle_flips_and_saves() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        fs::write(
+            base.join("settings.json"),
+            r#"{"enabledPlugins":{"foo@m":true}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(base.join("plugins")).unwrap();
+        fs::write(
+            base.join("plugins/installed_plugins.json"),
+            r#"{"version":1,"plugins":{"foo@m":[{"scope":"user","version":"1.0.0"}]}}"#,
+        )
+        .unwrap();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        app.set_section(Section::Extensions);
+
+        app.open_plugins_toggle();
+        assert!(app.plugins_toggle.is_some());
+        assert_eq!(app.plugins_toggle.as_ref().unwrap().items.len(), 1);
+        app.plugins_toggle_flip(); // foo@m : true -> false
+        app.plugins_toggle_save();
+        assert!(app.plugins_toggle.is_none());
+
+        let ext = claudine_core::read_extensions(app.home());
+        assert!(!ext.plugins.iter().find(|p| p.name == "foo@m").unwrap().enabled);
     }
 }
 
