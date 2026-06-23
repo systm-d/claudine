@@ -159,6 +159,156 @@ impl McpEditor {
             McpLevel::Servers => false,
         }
     }
+
+    pub fn editing(&self) -> bool {
+        matches!(self.edit, McpEdit::Text(_))
+    }
+
+    /// Fait défiler le transport stdio → http → sse → stdio.
+    pub fn cycle_type(&mut self, delta: i32) {
+        if let Some(s) = self.servers.get_mut(self.server_idx) {
+            let order = [McpTransport::Stdio, McpTransport::Http, McpTransport::Sse];
+            let cur = order.iter().position(|t| *t == s.transport).unwrap_or(0);
+            let n = order.len() as i32;
+            let next = (((cur as i32 + delta) % n + n) % n) as usize;
+            s.transport = order[next];
+            // Réinitialise la sélection (la disposition des lignes a changé).
+            self.field_idx = self.field_idx.min(self.rows().len().saturating_sub(1));
+        }
+    }
+
+    /// Ajoute un élément à la liste pertinente selon la ligne sélectionnée et le
+    /// transport : env si une ligne env est sélectionnée, header si une ligne
+    /// header l'est, sinon la liste principale (args en stdio, headers sinon).
+    pub fn add_item(&mut self) {
+        let row = self.rows().get(self.field_idx).copied();
+        let Some(s) = self.servers.get_mut(self.server_idx) else {
+            return;
+        };
+        match (s.transport, row) {
+            (McpTransport::Stdio, Some(McpRow::Env(_))) => s.env.push((String::new(), String::new())),
+            (McpTransport::Stdio, _) => s.args.push(String::new()),
+            (_, _) => s.headers.push((String::new(), String::new())),
+        }
+        // Sélectionne le nouvel élément (dernier de sa section).
+        self.field_idx = self.rows().len().saturating_sub(1);
+    }
+
+    fn current_value(&self) -> String {
+        let Some(s) = self.servers.get(self.server_idx) else {
+            return String::new();
+        };
+        match self.rows().get(self.field_idx).copied() {
+            Some(McpRow::Name) => s.name.clone(),
+            Some(McpRow::Command) => s.command.clone(),
+            Some(McpRow::Url) => s.url.clone(),
+            Some(McpRow::Arg(i)) => s.args.get(i).cloned().unwrap_or_default(),
+            Some(McpRow::Env(i)) => s
+                .env
+                .get(i)
+                .map(|(k, v)| {
+                    if k.is_empty() && v.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{k}={v}")
+                    }
+                })
+                .unwrap_or_default(),
+            Some(McpRow::Header(i)) => s
+                .headers
+                .get(i)
+                .map(|(k, v)| {
+                    if k.is_empty() && v.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{k}={v}")
+                    }
+                })
+                .unwrap_or_default(),
+            _ => String::new(),
+        }
+    }
+
+    /// Démarre l'édition de la ligne sélectionnée (sauf Type, qui se règle par ←/→).
+    pub fn begin_edit(&mut self) {
+        if self.level != McpLevel::Server {
+            return;
+        }
+        if matches!(self.rows().get(self.field_idx), Some(McpRow::Type)) {
+            return;
+        }
+        self.edit = McpEdit::Text(self.current_value());
+    }
+
+    pub fn input_char(&mut self, c: char) {
+        if let McpEdit::Text(buf) = &mut self.edit {
+            buf.push(c);
+        }
+    }
+
+    pub fn input_backspace(&mut self) {
+        if let McpEdit::Text(buf) = &mut self.edit {
+            buf.pop();
+        }
+    }
+
+    pub fn input_cancel(&mut self) {
+        self.edit = McpEdit::None;
+    }
+
+    pub fn input_commit(&mut self) {
+        let McpEdit::Text(buf) = std::mem::replace(&mut self.edit, McpEdit::None) else {
+            return;
+        };
+        let row = self.rows().get(self.field_idx).copied();
+        let Some(s) = self.servers.get_mut(self.server_idx) else {
+            return;
+        };
+        match row {
+            Some(McpRow::Name) => s.name = buf,
+            Some(McpRow::Command) => s.command = buf,
+            Some(McpRow::Url) => s.url = buf,
+            Some(McpRow::Arg(i)) => {
+                if let Some(a) = s.args.get_mut(i) {
+                    *a = buf;
+                }
+            }
+            Some(McpRow::Env(i)) => {
+                if let Some(p) = s.env.get_mut(i) {
+                    *p = split_pair(&buf);
+                }
+            }
+            Some(McpRow::Header(i)) => {
+                if let Some(p) = s.headers.get_mut(i) {
+                    *p = split_pair(&buf);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Première erreur de validation, ou `None` si tout est valide.
+    pub fn validation_error(&self) -> Option<String> {
+        for s in &self.servers {
+            if s.name.trim().is_empty() {
+                return Some("nom de serveur vide".to_string());
+            }
+            match s.transport {
+                McpTransport::Stdio if s.command.trim().is_empty() => {
+                    return Some(format!("commande vide pour « {} »", s.name));
+                }
+                McpTransport::Http | McpTransport::Sse if s.url.trim().is_empty() => {
+                    return Some(format!("url vide pour « {} »", s.name));
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    pub fn into_servers(self) -> Vec<McpServer> {
+        self.servers
+    }
 }
 
 /// Déplacement borné dans [0, len) (pas de bouclage).
@@ -171,6 +321,14 @@ fn step(idx: usize, delta: i32, len: usize) -> usize {
         idx.saturating_sub((-delta) as usize)
     } else {
         (idx + delta as usize).min(max)
+    }
+}
+
+/// Découpe « clé=valeur » sur le premier `=` ; sans `=`, tout devient la clé.
+fn split_pair(buf: &str) -> (String, String) {
+    match buf.split_once('=') {
+        Some((k, v)) => (k.trim().to_string(), v.to_string()),
+        None => (buf.trim().to_string(), String::new()),
     }
 }
 
@@ -213,5 +371,69 @@ mod tests {
         e.apply_delete();
         assert!(e.servers.is_empty());
         assert!(!e.confirm_delete);
+    }
+
+    #[test]
+    fn edit_name_command_and_add_arg() {
+        let mut e = McpEditor::new(vec![McpServer::default()]);
+        e.enter(); // Server level, field 0 = Name
+        e.begin_edit();
+        for c in "fs".chars() {
+            e.input_char(c);
+        }
+        e.input_commit();
+        assert_eq!(e.servers[0].name, "fs");
+
+        // Sélectionne Command (row 2) et édite.
+        e.field_idx = 2;
+        e.begin_edit();
+        for c in "npx".chars() {
+            e.input_char(c);
+        }
+        e.input_commit();
+        assert_eq!(e.servers[0].command, "npx");
+
+        // Ajoute un arg (sélection sur Command → ajoute à la liste args).
+        e.add_item();
+        assert_eq!(e.servers[0].args, vec![String::new()]);
+    }
+
+    #[test]
+    fn cycle_type_changes_transport() {
+        let mut e = McpEditor::new(vec![McpServer::default()]);
+        e.enter();
+        e.field_idx = 1; // Type
+        e.cycle_type(1); // stdio -> http
+        assert!(matches!(e.servers[0].transport, McpTransport::Http));
+        e.cycle_type(1); // http -> sse
+        assert!(matches!(e.servers[0].transport, McpTransport::Sse));
+    }
+
+    #[test]
+    fn edit_env_pair_as_key_value() {
+        let mut e = McpEditor::new(vec![McpServer {
+            transport: McpTransport::Stdio,
+            env: vec![(String::new(), String::new())],
+            ..Default::default()
+        }]);
+        e.enter();
+        // rows: Name, Type, Command, Env(0) → index 3.
+        e.field_idx = 3;
+        e.begin_edit();
+        for c in "TOKEN=abc".chars() {
+            e.input_char(c);
+        }
+        e.input_commit();
+        assert_eq!(e.servers[0].env, vec![("TOKEN".to_string(), "abc".to_string())]);
+    }
+
+    #[test]
+    fn validation_requires_name_and_command() {
+        let mut e = McpEditor::new(vec![McpServer::default()]); // name vide
+        assert!(e.validation_error().is_some());
+        e.servers[0].name = "fs".into(); // command vide (stdio)
+        assert!(e.validation_error().is_some());
+        e.servers[0].command = "npx".into();
+        assert!(e.validation_error().is_none());
     }
 }
