@@ -71,6 +71,9 @@ pub fn render(app: &mut App, f: &mut Frame) {
     if app.trash_view.is_some() {
         render_trash(app, f, area);
     }
+    if app.import.is_some() {
+        render_import(app, f, area);
+    }
 
     if app.show_picker {
         render_picker(app, f, area);
@@ -740,6 +743,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("PgUp / PgDn", "défilement par page"),
         ("Home / End", "aller au début / à la fin"),
         ("e", "exporter ~/.claude en .tar.gz"),
+        ("i", "importer un bundle .tar.gz (aperçu puis application)"),
         ("E", "éditer le fichier de la section dans $EDITOR (Mémoire/Config)"),
         ("Config", "↑↓ champ · Enter éditer · ←→ option · s enregistrer · r JSON"),
         ("h", "homes : ★ Tous les homes (agrégé) / un home précis"),
@@ -1095,6 +1099,97 @@ fn render_trash(app: &App, f: &mut Frame, area: Rect) {
         )));
         f.render_widget(warn, area);
     }
+}
+
+/// Overlay de l'assistant d'import : saisie du chemin puis aperçu/confirmation.
+fn render_import(app: &App, f: &mut Frame, area: Rect) {
+    let Some(im) = &app.import else {
+        return;
+    };
+    let popup = centered_rect(78, 52, area);
+    f.render_widget(Clear, popup);
+    let right = if im.preview.is_some() {
+        " Enter importer · w écraser · Esc annuler "
+    } else {
+        " Enter aperçu · Esc annuler "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Importer un bundle ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(right).right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(vec![
+        Span::styled(
+            "Bundle : ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(im.input.clone()),
+        Span::styled(
+            if im.preview.is_none() { "▏" } else { "" },
+            Style::default().fg(ACCENT),
+        ),
+    ]));
+    lines.push(Line::from(Span::styled(
+        format!("Cible : {}", app.active_label()),
+        Style::default().fg(DIM),
+    )));
+    lines.push(Line::from(""));
+
+    match &im.preview {
+        None => {
+            lines.push(Line::from(Span::styled(
+                "  Chemin d'un .tar.gz exporté par Claudine, puis Entrée pour l'aperçu.",
+                Style::default().fg(DIM),
+            )));
+        }
+        Some((_, p)) => {
+            lines.push(Line::from(Span::styled(
+                "Aperçu :",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            lines.push(Line::from(format!("  • {} projet(s)", p.projects)));
+            lines.push(Line::from(vec![Span::styled(
+                format!("  • {} session(s) nouvelle(s)", p.sessions_new),
+                Style::default().fg(Color::Green),
+            )]));
+            let conflict_style = if p.sessions_conflict > 0 {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(DIM)
+            };
+            let action = if im.overwrite {
+                "écrasées"
+            } else {
+                "ignorées"
+            };
+            lines.push(Line::from(Span::styled(
+                format!("  • {} en conflit → {action}", p.sessions_conflict),
+                conflict_style,
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::raw("  Écraser les conflits (w) : "),
+                Span::styled(
+                    if im.overwrite { "OUI" } else { "non" },
+                    Style::default()
+                        .fg(if im.overwrite { Color::Yellow } else { DIM })
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Entrée pour importer (sauvegarde auto avant écriture).",
+                Style::default().fg(DIM),
+            )));
+        }
+    }
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 // --- Helpers de style/layout ---

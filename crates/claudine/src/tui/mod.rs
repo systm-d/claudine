@@ -181,6 +181,33 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Assistant d'import : saisie du chemin, puis aperçu/confirmation.
+    if app.import.is_some() {
+        let in_preview = app
+            .import
+            .as_ref()
+            .map(|im| im.preview.is_some())
+            .unwrap_or(false);
+        if in_preview {
+            match key.code {
+                KeyCode::Esc => app.import_cancel(),
+                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                | KeyCode::Enter => app.import_apply(),
+                KeyCode::Char('w') | KeyCode::Char('W') => app.import_toggle_overwrite(),
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Esc => app.import_cancel(),
+                KeyCode::Enter => app.import_preview(),
+                KeyCode::Backspace => app.import_input_backspace(),
+                KeyCode::Char(c) => app.import_input_char(c),
+                _ => {}
+            }
+        }
+        return;
+    }
+
     // Recherche de session (live : filtre chemin/id à la frappe, Tab = contenu).
     if app.search.is_some() {
         match key.code {
@@ -218,6 +245,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('q') => app.quit(),
         KeyCode::Char('?') => app.toggle_help(),
         KeyCode::Char('e') => app.do_export(),
+        KeyCode::Char('i') => app.open_import(),
         KeyCode::Char('E') => app.request_edit(),
         KeyCode::Char('h') | KeyCode::Char('H') => app.open_picker(),
         KeyCode::Char('/') => app.open_search(),

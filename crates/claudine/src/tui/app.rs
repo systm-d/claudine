@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use claudine_core::{
-    decode_encoded_to_path, discover_homes, empty_trash, export, find_in_session, list_trash,
-    move_session, purge_trash_item, restore_session, scan_projects, trash_session, ClaudeHome,
-    ClaudineConfig, ExportOptions, Project, SessionMeta,
+    apply as import_apply, decode_encoded_to_path, discover_homes, dry_run as import_dry_run,
+    empty_trash, export, find_in_session, list_trash, move_session, purge_trash_item,
+    restore_session, scan_projects, trash_session, ClaudeHome, ClaudineConfig, ExportOptions,
+    ImportOptions, Project, RemapTable, SessionMeta,
 };
 use serde_json::Value;
 
@@ -126,6 +127,24 @@ pub struct TrashState {
     pub confirm: Option<PurgeScope>,
 }
 
+/// Aperçu d'un import (résultat d'un `dry_run`).
+#[derive(Debug, Clone, Default)]
+pub struct ImportPreview {
+    pub projects: usize,
+    pub sessions_new: usize,
+    pub sessions_conflict: usize,
+}
+
+/// État de l'assistant d'import : saisie du chemin de bundle puis aperçu.
+pub struct ImportState {
+    /// Chemin du bundle `.tar.gz` en cours de saisie.
+    pub input: String,
+    /// Aperçu calculé (présent une fois le bundle validé via `dry_run`).
+    pub preview: Option<(PathBuf, ImportPreview)>,
+    /// Écraser les sessions en conflit (sinon elles sont ignorées).
+    pub overwrite: bool,
+}
+
 /// Mode de saisie du sélecteur de home : navigation, ou saisie d'un chemin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PickerMode {
@@ -177,6 +196,8 @@ pub struct App {
 
     /// Viewer de corbeille (sessions supprimées, restaurables) ; `None` = fermé.
     pub trash_view: Option<TrashState>,
+    /// Assistant d'import d'un bundle ; `None` = fermé.
+    pub import: Option<ImportState>,
     pub focus: Focus,
     pub project_idx: usize,
     pub session_idx: usize,
@@ -262,6 +283,7 @@ impl App {
             move_idx: 0,
             search: None,
             trash_view: None,
+            import: None,
             focus: Focus::Projects,
             project_idx: 0,
             session_idx: 0,
@@ -809,6 +831,109 @@ impl App {
             Err(e) => {
                 self.status = Some(format!("Échec export : {e}"));
             }
+        }
+    }
+
+    // --- Import (assistant : saisie du chemin → aperçu → application) ---
+
+    /// Ouvre l'assistant d'import, préremplit le chemin avec le dernier export
+    /// trouvé dans `$HOME` (sinon le dossier `$HOME/`).
+    pub fn open_import(&mut self) {
+        let home_dir = std::env::var("HOME").map(PathBuf::from).ok();
+        let prefill = home_dir
+            .as_deref()
+            .and_then(latest_export_bundle)
+            .map(|p| p.to_string_lossy().into_owned())
+            .or_else(|| home_dir.map(|h| format!("{}/", h.display())))
+            .unwrap_or_default();
+        self.import = Some(ImportState {
+            input: prefill,
+            preview: None,
+            overwrite: false,
+        });
+    }
+
+    pub fn import_cancel(&mut self) {
+        self.import = None;
+    }
+
+    pub fn import_input_char(&mut self, c: char) {
+        if let Some(im) = &mut self.import {
+            if im.preview.is_none() {
+                im.input.push(c);
+            }
+        }
+    }
+
+    pub fn import_input_backspace(&mut self) {
+        if let Some(im) = &mut self.import {
+            if im.preview.is_none() {
+                im.input.pop();
+            }
+        }
+    }
+
+    pub fn import_toggle_overwrite(&mut self) {
+        if let Some(im) = &mut self.import {
+            im.overwrite = !im.overwrite;
+        }
+    }
+
+    /// Valide le chemin saisi et calcule l'aperçu (`dry_run`) sur le home actif.
+    pub fn import_preview(&mut self) {
+        let raw = match &self.import {
+            Some(im) if im.preview.is_none() => im.input.trim().to_string(),
+            _ => return,
+        };
+        if raw.is_empty() {
+            self.status = Some("Indiquez le chemin d'un bundle .tar.gz".to_string());
+            return;
+        }
+        let path = expand_tilde(&raw);
+        if !path.is_file() {
+            self.status = Some(format!("Fichier introuvable : {}", path.display()));
+            return;
+        }
+        let table = RemapTable::new(Vec::new());
+        match import_dry_run(&path, self.home(), &table, &ImportOptions::default()) {
+            Ok(report) => {
+                let preview = ImportPreview {
+                    projects: report.count("projects"),
+                    sessions_new: report.count("sessions_new"),
+                    sessions_conflict: report.count("sessions_conflict"),
+                };
+                if let Some(im) = &mut self.import {
+                    im.preview = Some((path, preview));
+                }
+            }
+            Err(e) => self.status = Some(format!("Bundle invalide : {e}")),
+        }
+    }
+
+    /// Applique l'import prévisualisé puis recharge la liste des projets.
+    pub fn import_apply(&mut self) {
+        let (path, overwrite) = match &self.import {
+            Some(im) => match &im.preview {
+                Some((p, _)) => (p.clone(), im.overwrite),
+                None => return,
+            },
+            None => return,
+        };
+        let table = RemapTable::new(Vec::new());
+        let opts = ImportOptions { overwrite };
+        let result = import_apply(&path, self.home(), &table, &opts);
+        self.import = None;
+        match result {
+            Ok(report) => {
+                let imported = report.count("sessions_imported");
+                let skipped = report.count("sessions_skipped");
+                self.reload_projects();
+                self.clamp_browse_indices();
+                self.status = Some(format!(
+                    "Import OK ({imported} session(s) importée(s), {skipped} ignorée(s))"
+                ));
+            }
+            Err(e) => self.status = Some(format!("Échec import : {e}")),
         }
     }
 
@@ -1634,6 +1759,35 @@ pub fn humanize_path(p: &str) -> String {
     p.to_string()
 }
 
+/// Étend un `~` ou `~/...` de tête en chemin absolu via `$HOME`.
+pub fn expand_tilde(p: &str) -> PathBuf {
+    if let Ok(home) = std::env::var("HOME") {
+        if p == "~" {
+            return PathBuf::from(home);
+        }
+        if let Some(rest) = p.strip_prefix("~/") {
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    PathBuf::from(p)
+}
+
+/// Renvoie le bundle d'export le plus récent de `dir` (préfixe `claudine-export-`,
+/// suffixe `.tar.gz`), choisi par ordre lexicographique du nom (l'horodatage y figure).
+fn latest_export_bundle(dir: &Path) -> Option<PathBuf> {
+    let mut best: Option<(String, PathBuf)> = None;
+    for entry in fs::read_dir(dir).ok()?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with("claudine-export-") && name.ends_with(".tar.gz") {
+            let take = best.as_ref().map(|(b, _)| name > *b).unwrap_or(true);
+            if take {
+                best = Some((name, entry.path()));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
 /// Formate une taille en octets de façon lisible (Kio/Mio).
 pub fn human_size(bytes: u64) -> String {
     const KIB: f64 = 1024.0;
@@ -1928,6 +2082,58 @@ mod tests {
 
         assert!(b.join("s1.jsonl").exists(), "session déplacée dans B");
         assert!(!a.join("s1.jsonl").exists(), "retirée de A");
+    }
+
+    #[test]
+    fn import_preview_then_apply_brings_sessions_in() {
+        let dir = tempfile::tempdir().unwrap();
+        // Source : un home avec une session, exporté en bundle.
+        let src = dir.path().join("src");
+        let spd = src.join("projects").join("-home-x-proj");
+        fs::create_dir_all(&spd).unwrap();
+        fs::write(spd.join("sess.jsonl"), "{\"cwd\":\"/home/x/proj\"}\n").unwrap();
+        let bundle = dir.path().join("b.tar.gz");
+        export(
+            &ClaudeHome::from_base(&src),
+            &bundle,
+            &ExportOptions::default(),
+        )
+        .unwrap();
+
+        // Cible : home vide.
+        let tgt = dir.path().join("tgt");
+        fs::create_dir_all(tgt.join("projects")).unwrap();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(&tgt)]);
+        assert!(app.is_empty());
+
+        app.open_import();
+        app.import.as_mut().unwrap().input = bundle.to_string_lossy().into_owned();
+        app.import_preview();
+        let (_, prev) = app.import.as_ref().unwrap().preview.as_ref().unwrap();
+        assert_eq!(prev.sessions_new, 1);
+        assert_eq!(prev.sessions_conflict, 0);
+
+        app.import_apply();
+        assert!(app.import.is_none());
+        assert!(!app.is_empty(), "session importée visible");
+        assert!(tgt
+            .join("projects")
+            .join("-home-x-proj")
+            .join("sess.jsonl")
+            .exists());
+    }
+
+    #[test]
+    fn import_rejects_missing_bundle() {
+        let dir = tempfile::tempdir().unwrap();
+        let tgt = dir.path().join("tgt");
+        fs::create_dir_all(tgt.join("projects")).unwrap();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(&tgt)]);
+        app.open_import();
+        app.import.as_mut().unwrap().input = "/does/not/exist.tar.gz".to_string();
+        app.import_preview();
+        assert!(app.import.as_ref().unwrap().preview.is_none(), "pas d'aperçu");
+        assert!(app.status.as_deref().unwrap().contains("introuvable"));
     }
 
     #[test]
