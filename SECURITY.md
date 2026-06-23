@@ -29,7 +29,7 @@ Seule la dernière version publiée sur `main` est maintenue.
 **Ne créez pas d'issue publique GitHub pour signaler une vulnérabilité de
 sécurité.**
 
-Envoyez un rapport privé par e-mail à : **<à compléter>**
+Envoyez un rapport privé par e-mail à : **contact@delfour.co**
 
 Incluez :
 

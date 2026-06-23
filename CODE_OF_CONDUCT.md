@@ -58,7 +58,7 @@ lorsqu'une personne représente officiellement le projet dans les espaces public
 ## Application
 
 Les cas de comportements abusifs, harcelants ou autrement inacceptables peuvent
-être signalés aux responsables du projet à l'adresse : **<à compléter>**.
+être signalés aux responsables du projet à l'adresse : **contact@delfour.co**.
 
 Toutes les plaintes seront examinées et étudiées rapidement et équitablement.
 
