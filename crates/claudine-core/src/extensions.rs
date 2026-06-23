@@ -1,10 +1,10 @@
-//! Lecture (en lecture seule) des extensions configurées d'un home Claude :
+//! Lecture et écriture des extensions configurées d'un home Claude :
 //! hooks (`settings.json`), plugins (`plugins/installed_plugins.json` +
 //! `enabledPlugins`) et serveurs MCP (`<home>/.claude.json` ou `<base>.json`).
 //!
-//! Le but est l'inspection : présenter à l'utilisateur ce qui est branché sur
-//! son installation. L'édition reste déléguée à `$EDITOR` sur les fichiers
-//! sous-jacents (les chemins MCP étant globaux/ambigus, on ne les réécrit pas).
+//! Lit et affiche ce qui est branché (hooks, plugins, MCP). Écrit les hooks et
+//! l'état des plugins via `write_hooks` et `set_plugin_enabled` sur
+//! `settings.json`. L'édition MCP reste hors périmètre (chemins globaux/ambigus).
 
 use std::fs;
 use std::path::{Path, PathBuf};
