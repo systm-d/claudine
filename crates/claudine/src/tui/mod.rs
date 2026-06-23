@@ -1,6 +1,7 @@
 //! Interface TUI Claudine : configuration du terminal, boucle d'évènements.
 
 pub mod app;
+pub mod hooks_editor;
 pub mod settings_form;
 pub mod ui;
 
