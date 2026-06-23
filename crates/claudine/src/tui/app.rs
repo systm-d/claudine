@@ -8,11 +8,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use claudine_core::{
     apply as import_apply, decode_encoded_to_path, discover_homes, dry_run as import_dry_run,
     empty_trash, export, find_in_session, list_trash, move_session, purge_trash_item,
-    read_extensions, restore_trash_entry, scan_projects, trash_project, trash_session, ClaudeHome,
-    ClaudineConfig, Extensions, ExportOptions, ImportOptions, Project, RemapTable, SessionMeta,
+    read_extensions, read_hook_groups, restore_trash_entry, scan_projects, trash_project,
+    trash_session, write_hooks, ClaudeHome, ClaudineConfig, Extensions, ExportOptions,
+    ImportOptions, Project, RemapTable, SessionMeta,
 };
 use serde_json::Value;
 
+use crate::tui::hooks_editor::HooksEditor;
 use crate::tui::settings_form::SettingsForm;
 
 /// Sections de premier niveau, sélectionnables avec Tab / 1,2,3,4.
@@ -210,6 +212,8 @@ pub struct App {
     pub trash_view: Option<TrashState>,
     /// Assistant d'import d'un bundle ; `None` = fermé.
     pub import: Option<ImportState>,
+    /// Éditeur de hooks (modal) ; `None` = fermé.
+    pub hooks_editor: Option<HooksEditor>,
     pub focus: Focus,
     pub project_idx: usize,
     pub session_idx: usize,
@@ -304,6 +308,7 @@ impl App {
             search: None,
             trash_view: None,
             import: None,
+            hooks_editor: None,
             focus: Focus::Projects,
             project_idx: 0,
             session_idx: 0,
@@ -751,12 +756,14 @@ impl App {
 
     // --- Config : formulaire de réglages ---
 
-    /// Enter dans la section courante : ouvre un transcript (Browse) ou active le
-    /// champ surligné du formulaire (Config, hors JSON brut).
+    /// Enter dans la section courante : ouvre un transcript (Browse), active le
+    /// champ surligné du formulaire (Config, hors JSON brut), ou ouvre l'éditeur
+    /// de hooks (Extensions).
     pub fn on_enter(&mut self) {
         match self.section {
             Section::Browse => self.open_transcript(),
             Section::Config if !self.settings.raw() => self.settings.activate(),
+            Section::Extensions => self.open_hooks_editor(),
             _ => {}
         }
     }
@@ -977,6 +984,38 @@ impl App {
                 ));
             }
             Err(e) => self.status = Some(format!("Échec import : {e}")),
+        }
+    }
+
+    // --- Éditeur de hooks ---
+
+    /// Ouvre l'éditeur de hooks pour le home actif (depuis la section Extensions).
+    pub fn open_hooks_editor(&mut self) {
+        if self.section != Section::Extensions {
+            return;
+        }
+        let groups = read_hook_groups(self.home());
+        self.hooks_editor = Some(HooksEditor::new(groups));
+    }
+
+    pub fn hooks_cancel(&mut self) {
+        self.hooks_editor = None;
+    }
+
+    /// Enregistre les hooks édités dans settings.json du home actif.
+    pub fn hooks_save(&mut self) {
+        let Some(editor) = self.hooks_editor.take() else {
+            return;
+        };
+        let groups = editor.into_groups();
+        match write_hooks(self.home(), &groups) {
+            Ok(()) => {
+                self.reload_files();
+                self.status = Some("Hooks enregistrés".to_string());
+            }
+            Err(e) => {
+                self.status = Some(format!("Échec enregistrement hooks : {e}"));
+            }
         }
     }
 
@@ -2499,6 +2538,37 @@ mod tests {
         // Reste en mode saisie, statut d'erreur affiché.
         assert!(matches!(app.picker_mode, PickerMode::AddInput(_)));
         assert!(app.status.as_deref().unwrap().contains("invalide"));
+    }
+
+    #[test]
+    fn hooks_editor_open_edit_and_save_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        fs::write(base.join("settings.json"), "{}").unwrap();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        app.set_section(Section::Extensions);
+
+        app.open_hooks_editor();
+        assert!(app.hooks_editor.is_some());
+        {
+            let e = app.hooks_editor.as_mut().unwrap();
+            e.add_group(); // un groupe PreToolUse vide
+            e.enter();
+            e.add_command();
+            e.begin_edit();
+            for c in "echo hi".chars() {
+                e.input_char(c);
+            }
+            e.input_commit();
+        }
+        app.hooks_save();
+        assert!(app.hooks_editor.is_none(), "fermé après enregistrement");
+
+        let groups = claudine_core::read_hook_groups(app.home());
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].event, "PreToolUse");
+        assert_eq!(groups[0].commands[0].command, "echo hi");
     }
 }
 

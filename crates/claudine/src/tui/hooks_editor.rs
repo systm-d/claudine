@@ -1,8 +1,6 @@
 //! Éditeur de hooks dédié (modal) : navigation hiérarchique
 //! évènement → groupe → commandes, et édition des champs.
 
-#![allow(dead_code)]
-
 use claudine_core::{HookCommand, HookGroup};
 
 /// Niveau de navigation courant.

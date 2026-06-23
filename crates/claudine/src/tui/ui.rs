@@ -12,6 +12,7 @@ use ratatui::{
 
 use super::app::{App, BrowseView, DeleteKind, Focus, PickerMode, PurgeScope, Section};
 use crate::tui::app::{human_size, humanize_path};
+use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
 use claudine_core::scan_projects;
 
 const ACCENT: Color = Color::Cyan;
@@ -74,6 +75,9 @@ pub fn render(app: &mut App, f: &mut Frame) {
     }
     if app.import.is_some() {
         render_import(app, f, area);
+    }
+    if app.hooks_editor.is_some() {
+        render_hooks_editor(app, f, area);
     }
 
     if app.show_picker {
@@ -1394,6 +1398,122 @@ fn render_import(app: &App, f: &mut Frame, area: Rect) {
         }
     }
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Modal de l'éditeur de hooks.
+fn render_hooks_editor(app: &App, f: &mut Frame, area: Rect) {
+    let Some(e) = &app.hooks_editor else {
+        return;
+    };
+    let popup = centered_rect(80, 70, area);
+    f.render_widget(Clear, popup);
+    let hint = match e.level {
+        HooksLevel::Groups => " a ajouter · Enter ouvrir · d suppr. · s enregistrer · Esc fermer ",
+        HooksLevel::Group => " a commande · Enter éditer · t timeout · d suppr. · s enregistrer · Esc retour ",
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Éditeur de hooks ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(hint).right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = Vec::new();
+    match e.level {
+        HooksLevel::Groups => {
+            if e.groups.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "  (aucun hook — 'a' pour en ajouter)",
+                    Style::default().fg(DIM),
+                )));
+            }
+            for (i, g) in e.groups.iter().enumerate() {
+                let sel = i == e.group_idx;
+                let matcher = g
+                    .matcher
+                    .as_deref()
+                    .map(|m| format!(" [{m}]"))
+                    .unwrap_or_default();
+                let txt = format!(
+                    "{} {}{}  · {} cmd",
+                    if sel { "▶" } else { " " },
+                    g.event,
+                    matcher,
+                    g.commands.len()
+                );
+                let style = if sel {
+                    selection_style(true)
+                } else {
+                    Style::default()
+                };
+                lines.push(Line::from(Span::styled(txt, style)));
+            }
+        }
+        HooksLevel::Group => {
+            let g = match e.groups.get(e.group_idx) {
+                Some(g) => g,
+                None => return,
+            };
+            let row = |sel: bool, label: String| {
+                let style = if sel {
+                    selection_style(true)
+                } else {
+                    Style::default()
+                };
+                Line::from(Span::styled(label, style))
+            };
+            lines.push(row(
+                e.field_idx == 0,
+                format!("  Évènement : {}", g.event),
+            ));
+            lines.push(row(
+                e.field_idx == 1,
+                format!(
+                    "  Matcher   : {}",
+                    g.matcher.as_deref().unwrap_or("(aucun)")
+                ),
+            ));
+            for (ci, c) in g.commands.iter().enumerate() {
+                let to = c
+                    .timeout
+                    .map(|t| format!("  (timeout {t}s)"))
+                    .unwrap_or_default();
+                lines.push(row(
+                    e.field_idx == ci + 2,
+                    format!("    $ {}{}", c.command, to),
+                ));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                format!("  évènements connus : {}", KNOWN_EVENTS.join(", ")),
+                Style::default().fg(DIM),
+            )));
+        }
+    }
+
+    // Bandeau de saisie ou de confirmation.
+    if let HookEdit::Text(buf) = &e.edit {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  Saisie : ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(buf.clone()),
+            Span::styled("▏", Style::default().fg(ACCENT)),
+        ]));
+    } else if e.confirm_delete {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Supprimer l'élément sélectionné ? (o/n)",
+            Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
 // --- Helpers de style/layout ---
