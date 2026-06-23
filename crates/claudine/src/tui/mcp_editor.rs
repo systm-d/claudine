@@ -27,6 +27,7 @@ pub enum McpRow {
     Header(usize),
 }
 
+#[derive(Debug)]
 pub struct McpEditor {
     pub servers: Vec<McpServer>,
     pub level: McpLevel,
