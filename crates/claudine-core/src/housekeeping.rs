@@ -179,6 +179,40 @@ pub fn restore_session(trash_path: &Path, home_base: &Path) -> Result<PathBuf> {
     Ok(dest)
 }
 
+/// Supprime **définitivement** une session de la corbeille (non récupérable) et
+/// élague les dossiers parents devenus vides (`<encoded>/`, `<horodatage>/`),
+/// sans jamais retirer le dossier `trash` lui-même.
+pub fn purge_trash_item(trash_path: &Path) -> Result<()> {
+    fs::remove_file(trash_path).map_err(|e| CoreError::io(trash_path, e))?;
+    // Remonte en élaguant les dossiers vides, jusqu'au dossier `trash` exclu.
+    let mut dir = trash_path.parent();
+    while let Some(d) = dir {
+        if d.file_name().map(|n| n == "trash").unwrap_or(false) {
+            break;
+        }
+        let empty = match fs::read_dir(d) {
+            Ok(mut rd) => rd.next().is_none(),
+            Err(_) => false,
+        };
+        if !empty || fs::remove_dir(d).is_err() {
+            break; // non vide, illisible, ou suppression impossible : on s'arrête.
+        }
+        dir = d.parent();
+    }
+    Ok(())
+}
+
+/// Vide **toute** la corbeille d'un home (non récupérable). Renvoie le nombre de
+/// sessions supprimées.
+pub fn empty_trash(home_base: &Path) -> Result<usize> {
+    let count = list_trash(home_base).len();
+    let trash = home_base.join("trash");
+    if trash.exists() {
+        fs::remove_dir_all(&trash).map_err(|e| CoreError::io(&trash, e))?;
+    }
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,6 +286,49 @@ mod tests {
         assert_eq!(restored, sess);
         assert!(sess.exists(), "session restaurée à sa place");
         assert!(!items[0].path.exists(), "retirée de la corbeille");
+    }
+
+    #[test]
+    fn purge_trash_item_deletes_and_prunes_empty_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let pdir = base.join("projects").join("-home-x-proj");
+        fs::create_dir_all(&pdir).unwrap();
+        let sess = pdir.join("abc.jsonl");
+        fs::write(&sess, "{\"cwd\":\"/home/x/proj\"}\n").unwrap();
+
+        trash_session(base, "-home-x-proj", &sess).unwrap();
+        let items = list_trash(base);
+        assert_eq!(items.len(), 1);
+        let ts_dir = items[0].path.parent().unwrap().parent().unwrap().to_path_buf();
+
+        purge_trash_item(&items[0].path).unwrap();
+
+        assert!(!items[0].path.exists(), "fichier supprimé définitivement");
+        assert!(!ts_dir.exists(), "dossiers parents vides élagués");
+        assert!(base.join("trash").exists(), "le dossier trash subsiste");
+        assert!(list_trash(base).is_empty());
+    }
+
+    #[test]
+    fn empty_trash_removes_everything_and_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        for (enc, id) in [("-home-x-a", "s1"), ("-home-x-b", "s2")] {
+            let pdir = base.join("projects").join(enc);
+            fs::create_dir_all(&pdir).unwrap();
+            let sess = pdir.join(format!("{id}.jsonl"));
+            fs::write(&sess, "{\"cwd\":\"/home/x\"}\n").unwrap();
+            trash_session(base, enc, &sess).unwrap();
+        }
+        assert_eq!(list_trash(base).len(), 2);
+
+        let n = empty_trash(base).unwrap();
+        assert_eq!(n, 2, "compte les sessions vidées");
+        assert!(list_trash(base).is_empty());
+        assert!(!base.join("trash").exists());
+        // Idempotent : vider une corbeille déjà absente ne casse rien.
+        assert_eq!(empty_trash(base).unwrap(), 0);
     }
 
     #[test]

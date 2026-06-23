@@ -153,14 +153,30 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
-    // Corbeille (restauration).
+    // Corbeille (restauration / purge définitive).
     if app.trash_view.is_some() {
-        match key.code {
-            KeyCode::Esc => app.trash_cancel(),
-            KeyCode::Enter | KeyCode::Char('r') => app.trash_restore_selected(),
-            KeyCode::Up | KeyCode::Char('k') => app.trash_move(-1),
-            KeyCode::Down | KeyCode::Char('j') => app.trash_move(1),
-            _ => {}
+        let awaiting_purge = app
+            .trash_view
+            .as_ref()
+            .map(|t| t.confirm.is_some())
+            .unwrap_or(false);
+        if awaiting_purge {
+            match key.code {
+                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                | KeyCode::Enter => app.trash_confirm_apply(),
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => app.trash_confirm_cancel(),
+                _ => {}
+            }
+        } else {
+            match key.code {
+                KeyCode::Esc => app.trash_cancel(),
+                KeyCode::Enter | KeyCode::Char('r') => app.trash_restore_selected(),
+                KeyCode::Up | KeyCode::Char('k') => app.trash_move(-1),
+                KeyCode::Down | KeyCode::Char('j') => app.trash_move(1),
+                KeyCode::Char('d') | KeyCode::Delete => app.trash_request_purge(),
+                KeyCode::Char('x') | KeyCode::Char('X') => app.trash_request_empty(),
+                _ => {}
+            }
         }
         return;
     }

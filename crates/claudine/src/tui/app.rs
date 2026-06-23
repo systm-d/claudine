@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use claudine_core::{
-    decode_encoded_to_path, discover_homes, export, find_in_session, list_trash, move_session,
-    restore_session, scan_projects, trash_session, ClaudeHome, ClaudineConfig, ExportOptions,
-    Project, SessionMeta,
+    decode_encoded_to_path, discover_homes, empty_trash, export, find_in_session, list_trash,
+    move_session, purge_trash_item, restore_session, scan_projects, trash_session, ClaudeHome,
+    ClaudineConfig, ExportOptions, Project, SessionMeta,
 };
 use serde_json::Value;
 
@@ -105,10 +105,21 @@ pub struct TrashEntry {
     pub label: String,
 }
 
+/// Portée d'une purge définitive de la corbeille.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PurgeScope {
+    /// Supprimer définitivement la session surlignée.
+    One,
+    /// Vider toute la corbeille (tous les homes).
+    All,
+}
+
 /// État du viewer de corbeille.
 pub struct TrashState {
     pub items: Vec<TrashEntry>,
     pub idx: usize,
+    /// Confirmation de purge en attente ; `None` = navigation normale.
+    pub confirm: Option<PurgeScope>,
 }
 
 /// Mode de saisie du sélecteur de home : navigation, ou saisie d'un chemin.
@@ -982,7 +993,11 @@ impl App {
             self.status = Some("Corbeille vide".to_string());
             return;
         }
-        self.trash_view = Some(TrashState { items, idx: 0 });
+        self.trash_view = Some(TrashState {
+            items,
+            idx: 0,
+            confirm: None,
+        });
     }
 
     pub fn trash_cancel(&mut self) {
@@ -1022,6 +1037,80 @@ impl App {
                 self.status = Some(format!("Restaurée → {}", dest.display()));
             }
             Err(e) => self.status = Some(format!("Échec restauration : {e}")),
+        }
+    }
+
+    /// Demande confirmation pour supprimer **définitivement** la session surlignée.
+    pub fn trash_request_purge(&mut self) {
+        if let Some(t) = &mut self.trash_view {
+            if !t.items.is_empty() {
+                t.confirm = Some(PurgeScope::One);
+            }
+        }
+    }
+
+    /// Demande confirmation pour **vider toute** la corbeille (tous les homes).
+    pub fn trash_request_empty(&mut self) {
+        if let Some(t) = &mut self.trash_view {
+            if !t.items.is_empty() {
+                t.confirm = Some(PurgeScope::All);
+            }
+        }
+    }
+
+    /// Annule une confirmation de purge en attente.
+    pub fn trash_confirm_cancel(&mut self) {
+        if let Some(t) = &mut self.trash_view {
+            t.confirm = None;
+        }
+    }
+
+    /// Applique la purge confirmée (suppression définitive, non récupérable).
+    pub fn trash_confirm_apply(&mut self) {
+        let scope = match self.trash_view.as_ref().and_then(|t| t.confirm) {
+            Some(s) => s,
+            None => return,
+        };
+        match scope {
+            PurgeScope::One => {
+                let entry = match self
+                    .trash_view
+                    .as_ref()
+                    .and_then(|t| t.items.get(t.idx).cloned())
+                {
+                    Some(e) => e,
+                    None => {
+                        self.trash_confirm_cancel();
+                        return;
+                    }
+                };
+                match purge_trash_item(&entry.path) {
+                    Ok(()) => {
+                        if let Some(t) = &mut self.trash_view {
+                            t.items.retain(|e| e.path != entry.path);
+                            t.confirm = None;
+                            if t.items.is_empty() {
+                                self.trash_view = None;
+                            } else {
+                                t.idx = t.idx.min(t.items.len() - 1);
+                            }
+                        }
+                        self.status = Some("Session supprimée définitivement".to_string());
+                    }
+                    Err(e) => {
+                        self.trash_confirm_cancel();
+                        self.status = Some(format!("Échec suppression : {e}"));
+                    }
+                }
+            }
+            PurgeScope::All => {
+                let mut total = 0usize;
+                for h in &self.homes {
+                    total += empty_trash(&h.base).unwrap_or(0);
+                }
+                self.trash_view = None;
+                self.status = Some(format!("Corbeille vidée ({total} session(s))"));
+            }
         }
     }
 
@@ -1677,6 +1766,67 @@ mod tests {
         app.trash_restore_selected();
         assert!(app.trash_view.is_none(), "corbeille vidée → fermée");
         assert!(pdir.join("aaaa.jsonl").exists(), "session restaurée");
+    }
+
+    #[test]
+    fn delete_then_purge_from_trash_is_permanent() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdir = dir.path().join("projects").join("-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(
+            pdir.join("aaaa.jsonl"),
+            r#"{"type":"user","cwd":"/home/x","message":{"content":"hi"}}"#,
+        )
+        .unwrap();
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+        app.toggle_focus();
+
+        app.request_delete_session();
+        app.confirm_delete_apply();
+
+        app.open_trash();
+        let trashed = app.trash_view.as_ref().unwrap().items[0].path.clone();
+        // Demande de purge → confirmation requise avant suppression.
+        app.trash_request_purge();
+        assert_eq!(app.trash_view.as_ref().unwrap().confirm, Some(PurgeScope::One));
+        assert!(trashed.exists(), "rien supprimé avant confirmation");
+
+        app.trash_confirm_apply();
+        assert!(!trashed.exists(), "session supprimée définitivement");
+        assert!(app.trash_view.is_none(), "corbeille vidée → fermée");
+        assert!(!pdir.join("aaaa.jsonl").exists(), "non restaurable");
+    }
+
+    #[test]
+    fn empty_trash_clears_all_homes() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdir = dir.path().join("projects").join("-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        for id in ["aaaa", "bbbb"] {
+            fs::write(
+                pdir.join(format!("{id}.jsonl")),
+                r#"{"type":"user","cwd":"/home/x","message":{"content":"hi"}}"#,
+            )
+            .unwrap();
+        }
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+        app.toggle_focus();
+
+        app.request_delete_session();
+        app.confirm_delete_apply();
+        app.request_delete_session();
+        app.confirm_delete_apply();
+
+        app.open_trash();
+        assert_eq!(app.trash_view.as_ref().unwrap().items.len(), 2);
+        app.trash_request_empty();
+        assert_eq!(app.trash_view.as_ref().unwrap().confirm, Some(PurgeScope::All));
+        app.trash_confirm_apply();
+
+        assert!(app.trash_view.is_none(), "corbeille fermée après vidage");
+        assert!(list_trash(dir.path()).is_empty(), "corbeille effectivement vidée");
     }
 
     #[test]

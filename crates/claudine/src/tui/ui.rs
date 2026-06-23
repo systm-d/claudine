@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{App, BrowseView, Focus, PickerMode, Section};
+use super::app::{App, BrowseView, Focus, PickerMode, PurgeScope, Section};
 use crate::tui::app::{human_size, humanize_path};
 use claudine_core::scan_projects;
 
@@ -547,15 +547,19 @@ fn render_status(app: &App, f: &mut Frame, area: Rect) {
 
 fn render_footer(app: &App, f: &mut Frame, area: Rect) {
     // Corbeille : raccourcis prioritaires.
-    if app.trash_view.is_some() {
-        f.render_widget(
-            Paragraph::new(Line::from(key_hints(&[
+    if let Some(t) = &app.trash_view {
+        let hints = if t.confirm.is_some() {
+            key_hints(&[("o", "confirmer"), ("n/Esc", "annuler")])
+        } else {
+            key_hints(&[
                 ("↑/↓", "session"),
                 ("Enter/r", "restaurer"),
+                ("d", "suppr. déf."),
+                ("x", "vider"),
                 ("Esc", "fermer"),
-            ]))),
-            area,
-        );
+            ])
+        };
+        f.render_widget(Paragraph::new(Line::from(hints)), area);
         return;
     }
 
@@ -703,7 +707,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("/", "rechercher une session (chemin / id / contenu)"),
         ("d / Suppr", "session → corbeille (récupérable)"),
         ("m", "déplacer la session vers un autre projet"),
-        ("c", "corbeille : restaurer une session supprimée"),
+        ("c", "corbeille : restaurer / supprimer déf. / vider"),
         ("Esc", "retour (transcript) sinon quitter"),
         ("PgUp / PgDn", "défilement par page"),
         ("Home / End", "aller au début / à la fin"),
@@ -1010,9 +1014,24 @@ fn render_trash(app: &App, f: &mut Frame, area: Rect) {
             " Corbeille — sessions supprimées ",
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ))
-        .title(Line::from(" Enter/r restaurer · Esc fermer ").right_aligned());
+        .title(
+            Line::from(" Enter/r restaurer · d suppr. déf. · x vider · Esc fermer ")
+                .right_aligned(),
+        );
     let inner = block.inner(popup);
     f.render_widget(block, popup);
+
+    // Réserve une ligne en bas pour la confirmation de purge si elle est active.
+    let (list_area, confirm_area) = if t.confirm.is_some() {
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(inner);
+        (rows[0], Some(rows[1]))
+    } else {
+        (inner, None)
+    };
+
     let items: Vec<ListItem> = t
         .items
         .iter()
@@ -1030,7 +1049,22 @@ fn render_trash(app: &App, f: &mut Frame, area: Rect) {
     if !t.items.is_empty() {
         state.select(Some(t.idx.min(t.items.len() - 1)));
     }
-    f.render_stateful_widget(list, inner, &mut state);
+    f.render_stateful_widget(list, list_area, &mut state);
+
+    if let (Some(area), Some(scope)) = (confirm_area, t.confirm) {
+        let msg = match scope {
+            PurgeScope::One => "Supprimer DÉFINITIVEMENT cette session ? (o/n)".to_string(),
+            PurgeScope::All => format!(
+                "VIDER toute la corbeille ({} session(s)) définitivement ? (o/n)",
+                t.items.len()
+            ),
+        };
+        let warn = Paragraph::new(Line::from(Span::styled(
+            msg,
+            Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+        f.render_widget(warn, area);
+    }
 }
 
 // --- Helpers de style/layout ---
