@@ -61,3 +61,12 @@ Task 2a.7: complete (commits 949495c..50c1285, review clean) — modal plugins (
 Task 2a.8: complete (commits 50c1285..22875cd, review clean) — raccourcis Extensions + doc module corrigée. PHASE 2a TERMINÉE (8/8).
 Revue finale (e7a90fa..22875cd) : « avec correctifs ». Bloquant #1 : validation §8 absente (commande/évènement vide). Minors triés = acceptables. Fix en cours.
 Fix revue finale: complete (commit 5c28717) — validation §8 (évènement/commande non vides) + nits. 103 tests verts, clippy clean. PHASE 2a OK pour merge.
+
+--- PHASE 2b (branche claudine-phase2b) ---
+Task 2b.1: complete (commits 4505ff3..b46dbbf, review clean) — modèle MCP + read. Minor: doc module extensions.rs « MCP hors périmètre » à MAJ en Task 6.
+Task 2b.2: complete (commits b46dbbf..5ffbe5d, review clean) — write_user_mcp_servers (préserve les autres clés). Cœur 2b OK.
+Task 2b.3: complete (commits 5ffbe5d..07320b1, review clean) — McpEditor navigation serveurs. Minor: pas de Debug derive.
+Task 2b.4: complete (commits 07320b1..60529e4, review clean) — édition champs MCP + validation. Déviation current_value (pas de "=" pré-rempli) validée.
+Task 2b.5: complete (commits 60529e4..26a3ce6, review clean) — câblage MCP (m), cohabitation m gérée, allow(dead_code) retiré. 4 risques nommés OK.
+Task 2b.6: complete (commits 26a3ce6..58dad24, review clean) — raccourci m + doc module + aide. PHASE 2b 6/6.
+Revue finale 2b (632ee6f..58dad24) : « ready to merge: yes ». Fix: derive Debug McpEditor (1 ligne). 115 tests verts.
