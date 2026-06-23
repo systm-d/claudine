@@ -45,3 +45,4 @@ Chemins lisibles: complete (commit ci-dessus) — ~ + troncature gauche selon la
 Recherche + h minuscule: complete (commit ci-dessus) — / cherche dans chemin/id/contenu, h ouvre les homes. 75 tests verts.
 Restauration corbeille: complete (commit ci-dessus) — c ouvre la corbeille, Enter/r restaure. 77 tests verts.
 Purge corbeille: complete (commit ci-dessus) — d supprime déf., x vide tout, confirm o/n. 81 tests verts.
+Recherche live: complete (commit ci-dessus) — filtre chemin/id à la frappe, Tab=contenu. 82 tests verts.
