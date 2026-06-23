@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use claudine_core::HookGroup;
+use claudine_core::{HookCommand, HookGroup};
 
 /// Niveau de navigation courant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +153,123 @@ impl HooksEditor {
             HooksLevel::Groups => false,
         }
     }
+
+    pub fn editing(&self) -> bool {
+        !matches!(self.edit, HookEdit::None)
+    }
+
+    /// Ajoute une commande vide au groupe courant et la sélectionne.
+    pub fn add_command(&mut self) {
+        if let Some(g) = self.groups.get_mut(self.group_idx) {
+            g.commands.push(HookCommand {
+                kind: "command".to_string(),
+                command: String::new(),
+                timeout: None,
+            });
+            // Sélectionne la nouvelle commande (rows : 0 évènement, 1 matcher, 2+ cmd).
+            self.field_idx = 2 + g.commands.len() - 1;
+        }
+    }
+
+    /// Valeur texte courante du champ sélectionné (niveau Group).
+    fn current_field_value(&self) -> String {
+        let Some(g) = self.groups.get(self.group_idx) else {
+            return String::new();
+        };
+        match self.field_idx {
+            0 => g.event.clone(),
+            1 => g.matcher.clone().unwrap_or_default(),
+            n => g
+                .commands
+                .get(n - 2)
+                .map(|c| c.command.clone())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// Démarre l'édition du champ sélectionné (niveau Group uniquement).
+    pub fn begin_edit(&mut self) {
+        if self.level == HooksLevel::Group {
+            self.edit = HookEdit::Text(self.current_field_value());
+        }
+    }
+
+    /// Démarre l'édition du timeout de la commande sélectionnée (rows ≥ 2).
+    pub fn begin_edit_timeout(&mut self) {
+        if self.level != HooksLevel::Group || self.field_idx < 2 {
+            return;
+        }
+        let cur = self
+            .groups
+            .get(self.group_idx)
+            .and_then(|g| g.commands.get(self.field_idx - 2))
+            .and_then(|c| c.timeout)
+            .map(|t| t.to_string())
+            .unwrap_or_default();
+        self.edit = HookEdit::Timeout(cur);
+    }
+
+    pub fn input_char(&mut self, c: char) {
+        match &mut self.edit {
+            HookEdit::Text(buf) => buf.push(c),
+            // Le timeout n'accepte que des chiffres.
+            HookEdit::Timeout(buf) if c.is_ascii_digit() => buf.push(c),
+            _ => {}
+        }
+    }
+
+    pub fn input_backspace(&mut self) {
+        match &mut self.edit {
+            HookEdit::Text(buf) | HookEdit::Timeout(buf) => {
+                buf.pop();
+            }
+            HookEdit::None => {}
+        }
+    }
+
+    pub fn input_cancel(&mut self) {
+        self.edit = HookEdit::None;
+    }
+
+    /// Valide la saisie dans le champ sélectionné.
+    pub fn input_commit(&mut self) {
+        match std::mem::replace(&mut self.edit, HookEdit::None) {
+            HookEdit::Text(buf) => {
+                let Some(g) = self.groups.get_mut(self.group_idx) else {
+                    return;
+                };
+                match self.field_idx {
+                    0 => g.event = buf,
+                    1 => g.matcher = if buf.is_empty() { None } else { Some(buf) },
+                    n => {
+                        if let Some(c) = g.commands.get_mut(n - 2) {
+                            c.command = buf;
+                        }
+                    }
+                }
+            }
+            HookEdit::Timeout(buf) => {
+                let val = if buf.is_empty() {
+                    None
+                } else {
+                    buf.parse::<u64>().ok()
+                };
+                if self.field_idx >= 2 {
+                    if let Some(g) = self.groups.get_mut(self.group_idx) {
+                        if let Some(c) = g.commands.get_mut(self.field_idx - 2) {
+                            c.timeout = val;
+                        }
+                    }
+                }
+            }
+            HookEdit::None => {}
+        }
+    }
+
+    /// Consomme l'éditeur et renvoie les groupes (pour l'enregistrement).
+    pub fn into_groups(self) -> Vec<HookGroup> {
+        self.groups
+    }
 }
 
 /// Déplacement borné dans [0, len) (pas de bouclage), comme le reste du TUI.
@@ -207,5 +324,56 @@ mod tests {
         assert!(e.back(), "back depuis Group renvoie true et remonte");
         assert_eq!(e.level, HooksLevel::Groups);
         assert!(!e.back(), "back depuis Groups renvoie false (fermer)");
+    }
+
+    #[test]
+    fn edit_event_matcher_and_add_command() {
+        let mut e = HooksEditor::new(vec![HookGroup {
+            event: "Stop".into(),
+            matcher: None,
+            commands: vec![],
+        }]);
+        e.enter(); // niveau Group, field_idx = 0 (évènement)
+
+        // Édite l'évènement.
+        e.begin_edit();
+        assert!(e.editing());
+        for c in "PreToolUse".chars() {
+            e.input_char(c);
+        }
+        // efface le tampon initial d'abord : on part du contenu existant.
+        e.input_commit();
+        assert!(!e.editing());
+
+        // Ajoute une commande puis l'édite (field passe sur la commande).
+        e.add_command();
+        assert_eq!(e.groups[0].commands.len(), 1);
+        // la sélection se place sur la nouvelle commande (row 2).
+        assert_eq!(e.field_idx, 2);
+        e.begin_edit();
+        for c in "echo hi".chars() {
+            e.input_char(c);
+        }
+        e.input_commit();
+        assert_eq!(e.groups[0].commands[0].command, "echo hi");
+    }
+
+    #[test]
+    fn edit_command_timeout() {
+        let mut e = HooksEditor::new(vec![HookGroup {
+            event: "Stop".into(),
+            matcher: None,
+            commands: vec![HookCommand { kind: "command".into(), command: "x".into(), timeout: None }],
+        }]);
+        e.enter();
+        e.field_idx = 2; // la commande
+        e.begin_edit_timeout();
+        assert!(e.editing());
+        e.input_char('a'); // ignoré (non chiffre)
+        for c in "45".chars() {
+            e.input_char(c);
+        }
+        e.input_commit();
+        assert_eq!(e.groups[0].commands[0].timeout, Some(45));
     }
 }
