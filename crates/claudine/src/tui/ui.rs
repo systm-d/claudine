@@ -1024,6 +1024,8 @@ fn render_confirm_delete(app: &App, f: &mut Frame, area: Rect) {
                     )
                 })
                 .unwrap_or_default();
+            // Garde la fin du chemin (le nom du projet) si trop long.
+            let name = truncate_left(&name, 52);
             (
                 " Supprimer le projet ",
                 format!("  Projet {name}  ({n} sess.)"),
@@ -1031,7 +1033,22 @@ fn render_confirm_delete(app: &App, f: &mut Frame, area: Rect) {
             )
         }
     };
-    let popup = centered_rect(58, 36, area);
+    let hint = "  (récupérable dans <home>/trash/…)";
+    let buttons = "  [o] oui    [n] non";
+
+    // Dimensionne la modale à son contenu (pas un grand cadre figé).
+    let content_w = [
+        title.chars().count(),
+        target_line.chars().count(),
+        prompt.chars().count(),
+        hint.chars().count(),
+        buttons.chars().count(),
+    ]
+    .into_iter()
+    .max()
+    .unwrap_or(0);
+    let width = (content_w as u16 + 4).clamp(28, area.width.saturating_sub(2).max(28));
+    let popup = centered_rect_fixed(width, 9, area);
     f.render_widget(Clear, popup);
     let block = Block::default().borders(Borders::ALL).title(Span::styled(
         title,
@@ -1047,10 +1064,7 @@ fn render_confirm_delete(app: &App, f: &mut Frame, area: Rect) {
         )),
         Line::from(""),
         Line::from(prompt),
-        Line::from(Span::styled(
-            "  (récupérable dans <home>/trash/…)",
-            Style::default().fg(DIM),
-        )),
+        Line::from(Span::styled(hint, Style::default().fg(DIM))),
         Line::from(""),
         Line::from(vec![
             Span::styled(
@@ -1420,6 +1434,20 @@ fn truncate_left(s: &str, max: usize) -> String {
     format!("…{tail}")
 }
 
+/// Rectangle centré de taille fixe (en cellules), borné à `area`.
+fn centered_rect_fixed(width: u16, height: u16, area: Rect) -> Rect {
+    let w = width.min(area.width);
+    let h = height.min(area.height);
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    }
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
@@ -1564,3 +1592,4 @@ mod tests {
         assert!(matches!(app.picker_mode, PickerMode::AddInput(_)));
     }
 }
+
