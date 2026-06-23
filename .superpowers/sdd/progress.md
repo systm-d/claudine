@@ -51,3 +51,13 @@ Import TUI: complete (commit ci-dessus) — i: saisie chemin, aperçu dry_run, w
 Section Extensions: complete (commit ci-dessus) — touche 4, hooks/plugins/MCP en lecture. 90 tests verts.
 Suppr. projet: complete (commit ci-dessus) — d sur Projets supprime le projet entier (corbeille), corrige ~ (0 sess.). 93 tests verts.
 Fix corbeille: complete (commit ci-dessus) — entrées par dossier supprimé (projets vides visibles/restaurables). 93 tests verts.
+Task 2a.1: complete (commits a572f98..22651e7, review clean) — Minor: test positionnel (extensions.rs ~150) à trier en revue finale.
+Task 2a.2: complete (commits 22651e7..5a650e0, review clean) — Minor: doc de module extensions.rs encore « lecture seule » → MAJ en Task 8.
+Task 2a.3: complete (commits 5a650e0..0ba7c2c, review clean). Cœur (1-3) terminé.
+Task 2a.4: complete (commits 0ba7c2c..a01b542, review clean) — Minor: apply_delete précond field_idx>=2 (sûre via delete_current) ; HookEdit déjà Debug-less ; allow(dead_code) à retirer en Task 6.
+Task 2a.5: complete (commits a01b542..60d9128, review clean) — Minor: 4 méthodes sans doc-comment.
+Task 2a.6: complete (commits 60d9128..949495c, review clean) — éditeur hooks câblé (Enter), allow(dead_code) retiré. Minor cosmétiques (let non initialisé, buf.clone).
+Task 2a.7: complete (commits 949495c..50c1285, review clean) — modal plugins (p). Minor: garde redondante, écriture partielle si erreur (accepté).
+Task 2a.8: complete (commits 50c1285..22875cd, review clean) — raccourcis Extensions + doc module corrigée. PHASE 2a TERMINÉE (8/8).
+Revue finale (e7a90fa..22875cd) : « avec correctifs ». Bloquant #1 : validation §8 absente (commande/évènement vide). Minors triés = acceptables. Fix en cours.
+Fix revue finale: complete (commit 5c28717) — validation §8 (évènement/commande non vides) + nits. 103 tests verts, clippy clean. PHASE 2a OK pour merge.
