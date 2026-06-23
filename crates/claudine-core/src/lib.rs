@@ -32,7 +32,7 @@ pub use housekeeping::{
 pub use search::find_in_session;
 pub use settings::{settings_catalog, FieldKind, FieldSpec, SettingsDoc};
 pub use extensions::{
-    read_extensions, read_hook_groups, write_hooks, set_plugin_enabled, Extensions, HookCommand, HookEntry, HookGroup, McpEntry, PluginEntry,
+    read_extensions, read_hook_groups, write_hooks, set_plugin_enabled, mcp_config_path, read_user_mcp_servers, Extensions, HookCommand, HookEntry, HookGroup, McpEntry, McpServer, McpTransport, PluginEntry,
 };
 
 #[cfg(test)]

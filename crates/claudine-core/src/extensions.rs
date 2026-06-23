@@ -56,6 +56,40 @@ pub struct McpEntry {
     pub summary: String,
 }
 
+/// Transport d'un serveur MCP.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpTransport {
+    Stdio,
+    Http,
+    Sse,
+}
+
+/// Un serveur MCP éditable (portée utilisateur).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServer {
+    pub name: String,
+    pub transport: McpTransport,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+}
+
+impl Default for McpServer {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            transport: McpTransport::Stdio,
+            command: String::new(),
+            args: Vec::new(),
+            env: Vec::new(),
+            url: String::new(),
+            headers: Vec::new(),
+        }
+    }
+}
+
 /// Vue agrégée des extensions d'un home.
 #[derive(Debug, Clone, Default)]
 pub struct Extensions {
@@ -174,6 +208,59 @@ pub fn write_hooks(home: &ClaudeHome, groups: &[HookGroup]) -> Result<()> {
     }
     doc.set(&["hooks"], Value::Object(hooks));
     doc.save(&path)
+}
+
+/// Fichier `.claude.json` à lire/écrire pour ce home : premier candidat existant
+/// (in-home prioritaire, puis hérité voisin), sinon `<home>/.claude.json` par défaut.
+pub fn mcp_config_path(home: &ClaudeHome) -> PathBuf {
+    for cand in mcp_config_candidates(home) {
+        if cand.is_file() {
+            return cand;
+        }
+    }
+    home.base.join(".claude.json")
+}
+
+fn read_pairs(v: Option<&Value>) -> Vec<(String, String)> {
+    v.and_then(|o| o.as_object())
+        .map(|o| {
+            o.iter()
+                .filter_map(|(k, val)| val.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Lit les serveurs MCP de portée utilisateur (`mcpServers` racine) du fichier résolu.
+pub fn read_user_mcp_servers(home: &ClaudeHome) -> Vec<McpServer> {
+    let Some(v) = load_json(&mcp_config_path(home)) else {
+        return Vec::new();
+    };
+    let Some(servers) = v.get("mcpServers").and_then(|m| m.as_object()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (name, def) in servers {
+        let transport = match def.get("type").and_then(|t| t.as_str()) {
+            Some("http") => McpTransport::Http,
+            Some("sse") => McpTransport::Sse,
+            _ => McpTransport::Stdio,
+        };
+        out.push(McpServer {
+            name: name.clone(),
+            transport,
+            command: def.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string(),
+            args: def
+                .get("args")
+                .and_then(|a| a.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .unwrap_or_default(),
+            env: read_pairs(def.get("env")),
+            url: def.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+            headers: read_pairs(def.get("headers")),
+        });
+    }
+    out
 }
 
 fn load_json(path: &Path) -> Option<Value> {
@@ -523,5 +610,34 @@ mod tests {
         assert!(bar.enabled);
         let doc = crate::settings::SettingsDoc::load(&home.settings_file()).unwrap();
         assert_eq!(doc.get_bool(&["includeCoAuthoredBy"]), Some(true));
+    }
+
+    #[test]
+    fn read_user_mcp_servers_parses_stdio_and_http() {
+        let cfg = r#"{
+            "mcpServers": {
+                "fs": {"type":"stdio","command":"npx","args":["-y","server-fs"],"env":{"TOKEN":"x"}},
+                "db": {"type":"http","url":"http://localhost:1","headers":{"Authorization":"Bearer y"}}
+            }
+        }"#;
+        let (_d, home) = home_with(&[(".claude.json", cfg)]);
+        let servers = read_user_mcp_servers(&home);
+        assert_eq!(servers.len(), 2);
+        let fs = servers.iter().find(|s| s.name == "fs").unwrap();
+        assert!(matches!(fs.transport, McpTransport::Stdio));
+        assert_eq!(fs.command, "npx");
+        assert_eq!(fs.args, vec!["-y", "server-fs"]);
+        assert_eq!(fs.env, vec![("TOKEN".to_string(), "x".to_string())]);
+        let db = servers.iter().find(|s| s.name == "db").unwrap();
+        assert!(matches!(db.transport, McpTransport::Http));
+        assert_eq!(db.url, "http://localhost:1");
+        assert_eq!(db.headers, vec![("Authorization".to_string(), "Bearer y".to_string())]);
+    }
+
+    #[test]
+    fn mcp_config_path_prefers_existing_in_home() {
+        // in-home .claude.json présent → choisi.
+        let (_d, home) = home_with(&[(".claude.json", "{}")]);
+        assert_eq!(mcp_config_path(&home), home.base.join(".claude.json"));
     }
 }
