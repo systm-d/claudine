@@ -9,9 +9,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::home::ClaudeHome;
+use crate::settings::SettingsDoc;
+use crate::error::Result;
 
 /// Un hook : un évènement, un éventuel filtre (`matcher`) et ses commandes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -118,6 +120,52 @@ pub fn read_hook_groups(home: &ClaudeHome) -> Vec<HookGroup> {
         }
     }
     out
+}
+
+/// Réécrit la clé `hooks` de `settings.json` à partir du modèle d'édition.
+/// Les autres réglages sont préservés ; backup + écriture atomique via SettingsDoc.
+pub fn write_hooks(home: &ClaudeHome, groups: &[HookGroup]) -> Result<()> {
+    let path = home.settings_file();
+    let mut doc = SettingsDoc::load(&path)?;
+
+    if groups.is_empty() {
+        doc.unset(&["hooks"]);
+        return doc.save(&path);
+    }
+
+    let mut hooks: Map<String, Value> = Map::new();
+    for g in groups {
+        let mut grp = Map::new();
+        if let Some(m) = &g.matcher {
+            if !m.is_empty() {
+                grp.insert("matcher".to_string(), Value::String(m.clone()));
+            }
+        }
+        let cmds: Vec<Value> = g
+            .commands
+            .iter()
+            .map(|c| {
+                let mut cm = Map::new();
+                let kind = if c.kind.is_empty() { "command" } else { &c.kind };
+                cm.insert("type".to_string(), Value::String(kind.to_string()));
+                cm.insert("command".to_string(), Value::String(c.command.clone()));
+                if let Some(t) = c.timeout {
+                    cm.insert("timeout".to_string(), Value::Number(t.into()));
+                }
+                Value::Object(cm)
+            })
+            .collect();
+        grp.insert("hooks".to_string(), Value::Array(cmds));
+
+        let entry = hooks
+            .entry(g.event.clone())
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if let Some(arr) = entry.as_array_mut() {
+            arr.push(Value::Object(grp));
+        }
+    }
+    doc.set(&["hooks"], Value::Object(hooks));
+    doc.save(&path)
 }
 
 fn load_json(path: &Path) -> Option<Value> {
@@ -411,5 +459,44 @@ mod tests {
         assert_eq!(groups[1].event, "SessionStart");
         assert_eq!(groups[1].matcher, None);
         assert_eq!(groups[1].commands.len(), 2);
+    }
+
+    #[test]
+    fn write_hooks_round_trips_and_preserves_other_settings() {
+        let settings = r#"{"includeCoAuthoredBy":false,"hooks":{"Stop":[{"hooks":[{"type":"command","command":"old"}]}]}}"#;
+        let (_d, home) = home_with(&[("settings.json", settings)]);
+
+        let groups = vec![
+            HookGroup {
+                event: "PreToolUse".into(),
+                matcher: Some("Bash".into()),
+                commands: vec![HookCommand {
+                    kind: "command".into(),
+                    command: "echo hi".into(),
+                    timeout: Some(15),
+                }],
+            },
+            HookGroup {
+                event: "PreToolUse".into(),
+                matcher: None,
+                commands: vec![HookCommand {
+                    kind: "command".into(),
+                    command: "echo two".into(),
+                    timeout: None,
+                }],
+            },
+        ];
+        write_hooks(&home, &groups).unwrap();
+
+        // Relecture : deux groupes sous PreToolUse, dans l'ordre.
+        let back = read_hook_groups(&home);
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[0].event, "PreToolUse");
+        assert_eq!(back[0].matcher.as_deref(), Some("Bash"));
+        assert_eq!(back[0].commands[0].timeout, Some(15));
+        assert_eq!(back[1].matcher, None);
+        // Autre réglage préservé.
+        let doc = crate::settings::SettingsDoc::load(&home.settings_file()).unwrap();
+        assert_eq!(doc.get_bool(&["includeCoAuthoredBy"]), Some(false));
     }
 }
