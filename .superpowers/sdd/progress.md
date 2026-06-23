@@ -44,3 +44,4 @@ Chemins projets: complete (commit ci-dessus) — décodage par sondage FS pour l
 Chemins lisibles: complete (commit ci-dessus) — ~ + troncature gauche selon largeur. 72 tests verts.
 Recherche + h minuscule: complete (commit ci-dessus) — / cherche dans chemin/id/contenu, h ouvre les homes. 75 tests verts.
 Restauration corbeille: complete (commit ci-dessus) — c ouvre la corbeille, Enter/r restaure. 77 tests verts.
+Purge corbeille: complete (commit ci-dessus) — d supprime déf., x vide tout, confirm o/n. 81 tests verts.
