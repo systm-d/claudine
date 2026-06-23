@@ -122,6 +122,14 @@ pub fn read_hook_groups(home: &ClaudeHome) -> Vec<HookGroup> {
     out
 }
 
+/// Active / désactive un plugin dans `enabledPlugins` de `settings.json`.
+pub fn set_plugin_enabled(home: &ClaudeHome, name: &str, enabled: bool) -> Result<()> {
+    let path = home.settings_file();
+    let mut doc = SettingsDoc::load(&path)?;
+    doc.set(&["enabledPlugins", name], Value::Bool(enabled));
+    doc.save(&path)
+}
+
 /// Réécrit la clé `hooks` de `settings.json` à partir du modèle d'édition.
 /// Les autres réglages sont préservés ; backup + écriture atomique via SettingsDoc.
 pub fn write_hooks(home: &ClaudeHome, groups: &[HookGroup]) -> Result<()> {
@@ -498,5 +506,22 @@ mod tests {
         // Autre réglage préservé.
         let doc = crate::settings::SettingsDoc::load(&home.settings_file()).unwrap();
         assert_eq!(doc.get_bool(&["includeCoAuthoredBy"]), Some(false));
+    }
+
+    #[test]
+    fn set_plugin_enabled_writes_flag_and_preserves_others() {
+        let settings = r#"{"includeCoAuthoredBy":true,"enabledPlugins":{"foo@m":true}}"#;
+        let (_d, home) = home_with(&[("settings.json", settings)]);
+
+        set_plugin_enabled(&home, "foo@m", false).unwrap();
+        set_plugin_enabled(&home, "bar@m", true).unwrap();
+
+        let ext = read_extensions(&home);
+        let foo = ext.plugins.iter().find(|p| p.name == "foo@m").unwrap();
+        assert!(!foo.enabled);
+        let bar = ext.plugins.iter().find(|p| p.name == "bar@m").unwrap();
+        assert!(bar.enabled);
+        let doc = crate::settings::SettingsDoc::load(&home.settings_file()).unwrap();
+        assert_eq!(doc.get_bool(&["includeCoAuthoredBy"]), Some(true));
     }
 }
