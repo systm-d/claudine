@@ -23,7 +23,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // header + onglets
+            Constraint::Length(5), // header : onglets + logo Claude
             Constraint::Min(1),    // corps
             Constraint::Length(1), // ligne de statut
             Constraint::Length(1), // pied (raccourcis)
@@ -85,6 +85,16 @@ pub fn render(app: &mut App, f: &mut Frame) {
     }
 }
 
+/// Logo Claude Code (petite créature pixel) en demi-blocs, couleur Claude.
+fn claude_logo_lines() -> Vec<Line<'static>> {
+    let o = Style::default().fg(Color::Rgb(0xd9, 0x77, 0x57));
+    vec![
+        Line::from(Span::styled(" ██▀███▀██ ", o)),
+        Line::from(Span::styled("▀█████████▀", o)),
+        Line::from(Span::styled("  ▀ ▀ ▀ ▀  ", o)),
+    ]
+}
+
 fn render_header(app: &App, f: &mut Frame, area: Rect) {
     let titles = [
         Section::Browse,
@@ -96,16 +106,18 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
     .map(|s| Line::from(format!(" {} ", s.title())))
     .collect::<Vec<_>>();
     let title = format!(" Claudine · {} ", app.active_label());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            title,
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(" h homes · / chercher · ? aide ").right_aligned());
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Onglets sur la première ligne intérieure.
     let tabs = Tabs::new(titles)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(Span::styled(
-                    title,
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                ))
-                .title(Line::from(" h homes · / chercher · ? aide ").right_aligned()),
-        )
         .select(app.section.index())
         .highlight_style(
             Style::default()
@@ -114,7 +126,23 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )
         .divider(Span::styled("│", Style::default().fg(DIM)));
-    f.render_widget(tabs, area);
+    let tabs_area = Rect {
+        height: 1,
+        ..inner
+    };
+    f.render_widget(tabs, tabs_area);
+
+    // Logo Claude aligné à droite, sur les 3 lignes intérieures (si assez large).
+    const LOGO_W: u16 = 11;
+    if inner.width > 55 && inner.height >= 3 {
+        let logo_area = Rect {
+            x: inner.x + inner.width - LOGO_W - 1,
+            y: inner.y,
+            width: LOGO_W,
+            height: 3,
+        };
+        f.render_widget(Paragraph::new(claude_logo_lines()), logo_area);
+    }
 }
 
 fn render_browse(app: &mut App, f: &mut Frame, area: Rect) {
@@ -1592,4 +1620,5 @@ mod tests {
         assert!(matches!(app.picker_mode, PickerMode::AddInput(_)));
     }
 }
+
 
