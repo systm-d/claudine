@@ -21,6 +21,22 @@ pub struct HookEntry {
     pub commands: Vec<String>,
 }
 
+/// Une commande de hook (modèle d'édition, niveau « complet »).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HookCommand {
+    pub kind: String, // "command" par défaut
+    pub command: String,
+    pub timeout: Option<u64>,
+}
+
+/// Un groupe de hook : un évènement, un matcher optionnel, des commandes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HookGroup {
+    pub event: String,
+    pub matcher: Option<String>,
+    pub commands: Vec<HookCommand>,
+}
+
 /// Un plugin installé et/ou activé.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PluginEntry {
@@ -53,6 +69,55 @@ pub fn read_extensions(home: &ClaudeHome) -> Extensions {
         plugins: read_plugins(home),
         mcp: read_mcp(home),
     }
+}
+
+/// Lit les hooks de `settings.json` (uniquement) sous forme éditable, en
+/// préservant l'ordre du fichier. Renvoie une liste vide si absent/illisible.
+pub fn read_hook_groups(home: &ClaudeHome) -> Vec<HookGroup> {
+    let Some(v) = load_json(&home.settings_file()) else {
+        return Vec::new();
+    };
+    let Some(hooks) = v.get("hooks").and_then(|h| h.as_object()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (event, groups) in hooks {
+        let Some(arr) = groups.as_array() else { continue };
+        for group in arr {
+            let matcher = group
+                .get("matcher")
+                .and_then(|m| m.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let commands = group
+                .get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|hs| {
+                    hs.iter()
+                        .map(|h| HookCommand {
+                            kind: h
+                                .get("type")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("command")
+                                .to_string(),
+                            command: h
+                                .get("command")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            timeout: h.get("timeout").and_then(|t| t.as_u64()),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            out.push(HookGroup {
+                event: event.clone(),
+                matcher,
+                commands,
+            });
+        }
+    }
+    out
 }
 
 fn load_json(path: &Path) -> Option<Value> {
@@ -321,5 +386,30 @@ mod tests {
         assert!(ext.hooks.is_empty());
         assert!(ext.plugins.is_empty());
         assert!(ext.mcp.is_empty());
+    }
+
+    #[test]
+    fn read_hook_groups_parses_event_matcher_commands() {
+        let settings = r#"{
+            "hooks": {
+                "PreToolUse": [
+                    {"matcher":"Bash","hooks":[{"type":"command","command":"echo a","timeout":30}]}
+                ],
+                "SessionStart": [
+                    {"hooks":[{"type":"command","command":"echo b"},{"type":"command","command":"echo c"}]}
+                ]
+            }
+        }"#;
+        let (_d, home) = home_with(&[("settings.json", settings)]);
+        let groups = read_hook_groups(&home);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].event, "PreToolUse");
+        assert_eq!(groups[0].matcher.as_deref(), Some("Bash"));
+        assert_eq!(groups[0].commands.len(), 1);
+        assert_eq!(groups[0].commands[0].command, "echo a");
+        assert_eq!(groups[0].commands[0].timeout, Some(30));
+        assert_eq!(groups[1].event, "SessionStart");
+        assert_eq!(groups[1].matcher, None);
+        assert_eq!(groups[1].commands.len(), 2);
     }
 }
