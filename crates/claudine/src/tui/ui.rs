@@ -872,12 +872,12 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("?", "aide"),
         ]),
         Section::Extensions => key_hints(&[
-            ("Tab/1·2·3·4", "sections"),
-            ("Enter", "éditer hooks"),
+            ("Enter", "hooks"),
             ("p", "plugins"),
+            ("m", "MCP"),
             ("↑/↓", "défiler"),
             ("t", "cible"),
-            ("E", "settings.json"),
+            ("E", "settings"),
             ("?", "aide"),
         ]),
         _ => key_hints(&[
@@ -905,7 +905,7 @@ fn render_help(f: &mut Frame, area: Rect) {
     let rows = [
         ("1 / 2 / 3 / 4", "Projets / Mémoire / Config / Extensions"),
         ("Tab", "section suivante"),
-        ("Extensions", "hooks · plugins · MCP (lecture) ; Enter édite les hooks, p (dés)active les plugins"),
+        ("Extensions", "hooks (Enter) · plugins (p) · serveurs MCP (m) — éditables ; E édite settings.json"),
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),

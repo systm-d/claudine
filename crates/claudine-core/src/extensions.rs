@@ -2,9 +2,9 @@
 //! hooks (`settings.json`), plugins (`plugins/installed_plugins.json` +
 //! `enabledPlugins`) et serveurs MCP (`<home>/.claude.json` ou `<base>.json`).
 //!
-//! Lit et affiche ce qui est branché (hooks, plugins, MCP). Écrit les hooks et
-//! l'état des plugins via `write_hooks` et `set_plugin_enabled` sur
-//! `settings.json`. L'édition MCP reste hors périmètre (chemins globaux/ambigus).
+//! Lit et affiche ce qui est branché (hooks, plugins, serveurs MCP). Écrit les
+//! hooks, l'état des plugins et les serveurs MCP via `write_hooks`,
+//! `set_plugin_enabled` et `write_user_mcp_servers` (portée utilisateur).
 
 use std::fs;
 use std::path::{Path, PathBuf};
