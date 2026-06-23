@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 //! Éditeur de serveurs MCP dédié (modal) : navigation serveurs → serveur,
 //! édition des champs selon le transport.
 

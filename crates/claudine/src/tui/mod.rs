@@ -189,6 +189,12 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Éditeur MCP (modal).
+    if app.mcp_editor.is_some() {
+        handle_mcp_editor_key(app, key);
+        return;
+    }
+
     // Bascule des plugins (modal).
     if app.plugins_toggle.is_some() {
         match key.code {
@@ -297,7 +303,13 @@ fn handle_key(app: &mut App, key: KeyEvent) {
 
         // Ménage des sessions (focus Sessions dans Browse).
         KeyCode::Char('d') | KeyCode::Delete => app.request_delete(),
-        KeyCode::Char('m') => app.request_move_session(),
+        KeyCode::Char('m') => {
+            if app.section == Section::Extensions {
+                app.open_mcp_editor();
+            } else {
+                app.request_move_session();
+            }
+        }
 
         // Repliage des groupes (homes) en vue agrégée.
         KeyCode::Char(' ') => app.toggle_collapse_current(),
@@ -436,6 +448,93 @@ fn handle_hooks_editor_key(app: &mut App, key: KeyEvent) {
     match deferred {
         Some(Deferred::Save) => app.hooks_save(),
         Some(Deferred::Cancel) => app.hooks_cancel(),
+        None => {}
+    }
+}
+
+fn handle_mcp_editor_key(app: &mut App, key: KeyEvent) {
+    use crate::tui::mcp_editor::{McpLevel, McpRow};
+    enum Deferred {
+        Save,
+        Cancel,
+    }
+    let deferred: Option<Deferred>;
+    {
+        let Some(e) = app.mcp_editor.as_mut() else {
+            return;
+        };
+        if e.confirm_delete {
+            match key.code {
+                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                | KeyCode::Enter => e.apply_delete(),
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => e.confirm_delete = false,
+                _ => {}
+            }
+            return;
+        }
+        if e.editing() {
+            match key.code {
+                KeyCode::Esc => e.input_cancel(),
+                KeyCode::Enter => e.input_commit(),
+                KeyCode::Backspace => e.input_backspace(),
+                KeyCode::Char(c) => e.input_char(c),
+                _ => {}
+            }
+            return;
+        }
+        deferred = match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                e.move_sel(-1);
+                None
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                e.move_sel(1);
+                None
+            }
+            KeyCode::Left => {
+                if matches!(e.rows().get(e.field_idx), Some(McpRow::Type)) {
+                    e.cycle_type(-1);
+                }
+                None
+            }
+            KeyCode::Right => {
+                if matches!(e.rows().get(e.field_idx), Some(McpRow::Type)) {
+                    e.cycle_type(1);
+                }
+                None
+            }
+            KeyCode::Char('a') => {
+                match e.level {
+                    McpLevel::Servers => e.add_server(),
+                    McpLevel::Server => e.add_item(),
+                }
+                None
+            }
+            KeyCode::Char('d') => {
+                e.delete_current();
+                None
+            }
+            KeyCode::Char('s') => Some(Deferred::Save),
+            KeyCode::Enter => {
+                match e.level {
+                    McpLevel::Servers => e.enter(),
+                    McpLevel::Server => e.begin_edit(),
+                }
+                None
+            }
+            KeyCode::Esc => {
+                if e.back() {
+                    None
+                } else {
+                    Some(Deferred::Cancel)
+                }
+            }
+            _ => None,
+        };
+    }
+    match deferred {
+        Some(Deferred::Save) => app.mcp_save(),
+        Some(Deferred::Cancel) => app.mcp_cancel(),
         None => {}
     }
 }

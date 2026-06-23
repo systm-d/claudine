@@ -8,13 +8,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use claudine_core::{
     apply as import_apply, decode_encoded_to_path, discover_homes, dry_run as import_dry_run,
     empty_trash, export, find_in_session, list_trash, move_session, purge_trash_item,
-    read_extensions, read_hook_groups, restore_trash_entry, scan_projects, set_plugin_enabled,
-    trash_project, trash_session, write_hooks, ClaudeHome, ClaudineConfig, Extensions,
-    ExportOptions, ImportOptions, Project, RemapTable, SessionMeta,
+    read_extensions, read_hook_groups, read_user_mcp_servers, restore_trash_entry, scan_projects,
+    set_plugin_enabled, trash_project, trash_session, write_hooks, write_user_mcp_servers,
+    ClaudeHome, ClaudineConfig, Extensions, ExportOptions, ImportOptions, Project, RemapTable,
+    SessionMeta,
 };
 use serde_json::Value;
 
 use crate::tui::hooks_editor::HooksEditor;
+use crate::tui::mcp_editor::McpEditor;
 use crate::tui::settings_form::SettingsForm;
 
 /// Sections de premier niveau, sélectionnables avec Tab / 1,2,3,4.
@@ -227,6 +229,8 @@ pub struct App {
     pub import: Option<ImportState>,
     /// Éditeur de hooks (modal) ; `None` = fermé.
     pub hooks_editor: Option<HooksEditor>,
+    /// Éditeur de serveurs MCP (modal) ; `None` = fermé.
+    pub mcp_editor: Option<McpEditor>,
     /// Modal de bascule des plugins (activer/désactiver) ; `None` = fermé.
     pub plugins_toggle: Option<PluginsToggle>,
     pub focus: Focus,
@@ -324,6 +328,7 @@ impl App {
             trash_view: None,
             import: None,
             hooks_editor: None,
+            mcp_editor: None,
             plugins_toggle: None,
             focus: Focus::Projects,
             project_idx: 0,
@@ -1052,6 +1057,42 @@ impl App {
             Err(e) => {
                 self.status = Some(format!("Échec enregistrement hooks : {e}"));
             }
+        }
+    }
+
+    // --- Éditeur de serveurs MCP ---
+
+    /// Ouvre l'éditeur MCP (portée utilisateur) du home actif, depuis Extensions.
+    pub fn open_mcp_editor(&mut self) {
+        if self.section != Section::Extensions {
+            return;
+        }
+        let servers = read_user_mcp_servers(self.home());
+        self.mcp_editor = Some(McpEditor::new(servers));
+    }
+
+    pub fn mcp_cancel(&mut self) {
+        self.mcp_editor = None;
+    }
+
+    /// Enregistre les serveurs MCP édités ; bloque si invalide (éditeur maintenu ouvert).
+    pub fn mcp_save(&mut self) {
+        if let Some(e) = self.mcp_editor.as_ref() {
+            if let Some(err) = e.validation_error() {
+                self.status = Some(format!("Enregistrement bloqué : {err}"));
+                return;
+            }
+        }
+        let Some(editor) = self.mcp_editor.take() else {
+            return;
+        };
+        let servers = editor.into_servers();
+        match write_user_mcp_servers(self.home(), &servers) {
+            Ok(()) => {
+                self.reload_files();
+                self.status = Some("Serveurs MCP enregistrés".to_string());
+            }
+            Err(e) => self.status = Some(format!("Échec enregistrement MCP : {e}")),
         }
     }
 
@@ -2704,6 +2745,59 @@ mod tests {
         let groups = claudine_core::read_hook_groups(app.home());
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].commands[0].command, "echo ok");
+    }
+
+    #[test]
+    fn mcp_editor_open_edit_and_save_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        fs::write(base.join(".claude.json"), "{}").unwrap();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        app.set_section(Section::Extensions);
+
+        app.open_mcp_editor();
+        assert!(app.mcp_editor.is_some());
+        {
+            let e = app.mcp_editor.as_mut().unwrap();
+            e.add_server();
+            e.enter();
+            // Name
+            e.begin_edit();
+            for c in "fs".chars() {
+                e.input_char(c);
+            }
+            e.input_commit();
+            // Command (row 2)
+            e.field_idx = 2;
+            e.begin_edit();
+            for c in "npx".chars() {
+                e.input_char(c);
+            }
+            e.input_commit();
+        }
+        app.mcp_save();
+        assert!(app.mcp_editor.is_none(), "fermé après enregistrement");
+
+        let servers = claudine_core::read_user_mcp_servers(app.home());
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "fs");
+        assert_eq!(servers[0].command, "npx");
+    }
+
+    #[test]
+    fn mcp_save_blocked_on_invalid() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        fs::write(base.join(".claude.json"), "{}").unwrap();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        app.set_section(Section::Extensions);
+        app.open_mcp_editor();
+        app.mcp_editor.as_mut().unwrap().add_server(); // nom vide
+        app.mcp_save();
+        assert!(app.mcp_editor.is_some(), "éditeur reste ouvert");
+        assert!(app.status.as_deref().unwrap().contains("bloqué"));
     }
 
     #[test]
