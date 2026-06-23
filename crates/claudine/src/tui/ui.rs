@@ -50,6 +50,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
             )
         }
         Section::Config => render_config(app, f, chunks[1]),
+        Section::Extensions => render_extensions(app, f, chunks[1]),
     }
 
     render_status(app, f, chunks[2]);
@@ -85,10 +86,15 @@ pub fn render(app: &mut App, f: &mut Frame) {
 }
 
 fn render_header(app: &App, f: &mut Frame, area: Rect) {
-    let titles = [Section::Browse, Section::Memory, Section::Config]
-        .iter()
-        .map(|s| Line::from(format!(" {} ", s.title())))
-        .collect::<Vec<_>>();
+    let titles = [
+        Section::Browse,
+        Section::Memory,
+        Section::Config,
+        Section::Extensions,
+    ]
+    .iter()
+    .map(|s| Line::from(format!(" {} ", s.title())))
+    .collect::<Vec<_>>();
     let title = format!(" Claudine · {} ", app.active_label());
     let tabs = Tabs::new(titles)
         .block(
@@ -359,6 +365,113 @@ fn render_scroll_pane(
     f.render_widget(para, inner);
 }
 
+/// Section Extensions : hooks, plugins et serveurs MCP du home actif (lecture).
+fn render_extensions(app: &mut App, f: &mut Frame, area: Rect) {
+    let ext = &app.extensions;
+    let title = if app.aggregate {
+        format!(" Extensions · {} — hooks / plugins / MCP  (t: cible) ", app.home().label)
+    } else {
+        " Extensions — hooks / plugins / MCP ".to_string()
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            title,
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(" E éditer settings.json ").right_aligned());
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    app.ext_viewport = inner.height as usize;
+
+    let header = |label: String| {
+        Line::from(Span::styled(
+            label,
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+    };
+    let none = || Line::from(Span::styled("  (aucun)", Style::default().fg(DIM)));
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // --- Hooks ---
+    lines.push(header(format!("── Hooks ({}) ──", ext.hooks.len())));
+    if ext.hooks.is_empty() {
+        lines.push(none());
+    }
+    for h in &ext.hooks {
+        let matcher = h
+            .matcher
+            .as_deref()
+            .map(|m| format!("  [{m}]"))
+            .unwrap_or_default();
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {}", h.event),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(matcher, Style::default().fg(Color::Cyan)),
+        ]));
+        for cmd in &h.commands {
+            lines.push(Line::from(Span::styled(
+                format!("      $ {cmd}"),
+                Style::default().fg(DIM),
+            )));
+        }
+    }
+    lines.push(Line::from(""));
+
+    // --- Plugins ---
+    lines.push(header(format!("── Plugins ({}) ──", ext.plugins.len())));
+    if ext.plugins.is_empty() {
+        lines.push(none());
+    }
+    for p in &ext.plugins {
+        let (mark, mark_style) = if p.enabled {
+            ("✓", Style::default().fg(Color::Green))
+        } else {
+            ("✗", Style::default().fg(DIM))
+        };
+        let mut spans = vec![
+            Span::styled(format!("  {mark} "), mark_style),
+            Span::raw(p.name.clone()),
+        ];
+        if let Some(v) = &p.version {
+            spans.push(Span::styled(format!("  v{v}"), Style::default().fg(DIM)));
+        }
+        if let Some(s) = &p.scope {
+            spans.push(Span::styled(format!("  ({s})"), Style::default().fg(DIM)));
+        }
+        lines.push(Line::from(spans));
+    }
+    lines.push(Line::from(""));
+
+    // --- MCP ---
+    lines.push(header(format!("── Serveurs MCP ({}) ──", ext.mcp.len())));
+    if ext.mcp.is_empty() {
+        lines.push(none());
+    }
+    for m in &ext.mcp {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {}", m.name),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!("  ⟨{}⟩", m.scope), Style::default().fg(Color::Cyan)),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!("      {}", m.summary),
+            Style::default().fg(DIM),
+        )));
+    }
+
+    app.ext_total = lines.len();
+    let para = Paragraph::new(Text::from(lines))
+        .wrap(Wrap { trim: false })
+        .scroll((app.ext_scroll as u16, 0));
+    f.render_widget(para, inner);
+}
+
 /// Section Config : formulaire éditable, ou JSON brut (bascule `r`).
 fn render_config(app: &mut App, f: &mut Frame, area: Rect) {
     if app.settings.raw() {
@@ -614,6 +727,21 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
         return;
     }
 
+    // Assistant d'import : raccourcis prioritaires.
+    if let Some(im) = &app.import {
+        let hints = if im.preview.is_some() {
+            key_hints(&[
+                ("Enter", "importer"),
+                ("w", "écraser conflits"),
+                ("Esc", "annuler"),
+            ])
+        } else {
+            key_hints(&[("saisir", "chemin .tar.gz"), ("Enter", "aperçu"), ("Esc", "annuler")])
+        };
+        f.render_widget(Paragraph::new(Line::from(hints)), area);
+        return;
+    }
+
     // Le sélecteur de home a ses propres raccourcis prioritaires.
     if app.show_picker {
         let hints = if matches!(app.picker_mode, PickerMode::AddInput(_)) {
@@ -697,16 +825,23 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("q", "quitter"),
         ]),
         Section::Memory if app.aggregate => key_hints(&[
-            ("Tab/1·2·3", "sections"),
+            ("Tab/1·2·3·4", "sections"),
             ("↑/↓", "défiler"),
             ("t", "cible"),
             ("E", "éditer"),
             ("h", "homes"),
             ("?", "aide"),
-            ("q", "quitter"),
+        ]),
+        Section::Extensions => key_hints(&[
+            ("Tab/1·2·3·4", "sections"),
+            ("↑/↓ PgUp/Dn", "défiler"),
+            ("t", "cible"),
+            ("E", "éditer settings"),
+            ("h", "homes"),
+            ("?", "aide"),
         ]),
         _ => key_hints(&[
-            ("Tab/1·2·3", "sections"),
+            ("Tab/1·2·3·4", "sections"),
             ("↑/↓ PgUp/Dn", "défiler"),
             ("E", "éditer"),
             ("e", "export"),
@@ -728,8 +863,9 @@ fn render_help(f: &mut Frame, area: Rect) {
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ));
     let rows = [
-        ("1 / 2 / 3", "aller à Projets / Mémoire / Config"),
+        ("1 / 2 / 3 / 4", "Projets / Mémoire / Config / Extensions"),
         ("Tab", "section suivante"),
+        ("Extensions", "hooks · plugins · MCP (lecture ; E édite settings.json)"),
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),

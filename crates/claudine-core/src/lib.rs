@@ -13,6 +13,7 @@ pub mod import;
 pub mod housekeeping;
 pub mod search;
 pub mod settings;
+pub mod extensions;
 
 pub use config::{config_path, merge_registered, ClaudineConfig, RegisteredHome};
 pub use error::{CoreError, Report, Result};
@@ -30,6 +31,9 @@ pub use housekeeping::{
 };
 pub use search::find_in_session;
 pub use settings::{settings_catalog, FieldKind, FieldSpec, SettingsDoc};
+pub use extensions::{
+    read_extensions, Extensions, HookEntry, McpEntry, PluginEntry,
+};
 
 #[cfg(test)]
 pub(crate) mod testkit {

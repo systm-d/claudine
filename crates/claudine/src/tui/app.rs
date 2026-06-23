@@ -8,19 +8,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use claudine_core::{
     apply as import_apply, decode_encoded_to_path, discover_homes, dry_run as import_dry_run,
     empty_trash, export, find_in_session, list_trash, move_session, purge_trash_item,
-    restore_session, scan_projects, trash_session, ClaudeHome, ClaudineConfig, ExportOptions,
-    ImportOptions, Project, RemapTable, SessionMeta,
+    read_extensions, restore_session, scan_projects, trash_session, ClaudeHome, ClaudineConfig,
+    Extensions, ExportOptions, ImportOptions, Project, RemapTable, SessionMeta,
 };
 use serde_json::Value;
 
 use crate::tui::settings_form::SettingsForm;
 
-/// Sections de premier niveau, sélectionnables avec Tab / 1,2,3.
+/// Sections de premier niveau, sélectionnables avec Tab / 1,2,3,4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
     Browse,
     Memory,
     Config,
+    Extensions,
 }
 
 impl Section {
@@ -29,6 +30,7 @@ impl Section {
             Section::Browse => "Projets",
             Section::Memory => "Mémoire",
             Section::Config => "Config",
+            Section::Extensions => "Extensions",
         }
     }
 
@@ -37,6 +39,7 @@ impl Section {
             Section::Browse => 0,
             Section::Memory => 1,
             Section::Config => 2,
+            Section::Extensions => 3,
         }
     }
 
@@ -44,7 +47,8 @@ impl Section {
         match self {
             Section::Browse => Section::Memory,
             Section::Memory => Section::Config,
-            Section::Config => Section::Browse,
+            Section::Config => Section::Extensions,
+            Section::Extensions => Section::Browse,
         }
     }
 }
@@ -218,6 +222,13 @@ pub struct App {
     pub config_scroll: usize,
     pub config_viewport: usize,
 
+    // --- Extensions (hooks / plugins / MCP) du home actif ---
+    pub extensions: Extensions,
+    pub ext_scroll: usize,
+    pub ext_viewport: usize,
+    /// Nombre de lignes rendues dans la section Extensions (pour le clamp Fin).
+    pub ext_total: usize,
+
     // --- Formulaire de réglages (édite le settings.json de la home active) ---
     pub settings: SettingsForm,
 }
@@ -260,6 +271,7 @@ impl App {
         let home = &homes[0];
         let memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
         let config_lines = build_config_lines(home);
+        let extensions = read_extensions(home);
         let settings = SettingsForm::load(home);
         App {
             homes,
@@ -296,6 +308,10 @@ impl App {
             config_lines,
             config_scroll: 0,
             config_viewport: 1,
+            extensions,
+            ext_scroll: 0,
+            ext_viewport: 1,
+            ext_total: 0,
             settings,
         }
     }
@@ -495,6 +511,7 @@ impl App {
                     self.settings.move_field(1);
                 }
             }
+            Section::Extensions => self.ext_scroll = scroll_add(self.ext_scroll, 1),
         }
     }
 
@@ -512,6 +529,7 @@ impl App {
                     self.settings.move_field(-1);
                 }
             }
+            Section::Extensions => self.ext_scroll = self.ext_scroll.saturating_sub(1),
         }
     }
 
@@ -644,6 +662,9 @@ impl App {
                     self.settings.move_field(8);
                 }
             }
+            Section::Extensions => {
+                self.ext_scroll = page(self.ext_scroll, self.ext_viewport, true);
+            }
             _ => {}
         }
     }
@@ -665,6 +686,9 @@ impl App {
                     self.settings.move_field(-8);
                 }
             }
+            Section::Extensions => {
+                self.ext_scroll = page(self.ext_scroll, self.ext_viewport, false);
+            }
             _ => {}
         }
     }
@@ -683,6 +707,7 @@ impl App {
                     self.settings.go_first();
                 }
             }
+            Section::Extensions => self.ext_scroll = 0,
             _ => {}
         }
     }
@@ -708,6 +733,9 @@ impl App {
                 } else {
                     self.settings.go_last();
                 }
+            }
+            Section::Extensions => {
+                self.ext_scroll = self.ext_total.saturating_sub(self.ext_viewport);
             }
             _ => {}
         }
@@ -763,7 +791,10 @@ impl App {
     pub fn cycle_config_target(&mut self) {
         if !self.aggregate
             || self.homes.len() < 2
-            || !matches!(self.section, Section::Memory | Section::Config)
+            || !matches!(
+                self.section,
+                Section::Memory | Section::Config | Section::Extensions
+            )
         {
             return;
         }
@@ -771,10 +802,12 @@ impl App {
         let home = self.homes[self.active].clone();
         self.memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
         self.config_lines = build_config_lines(&home);
+        self.extensions = read_extensions(&home);
         self.settings = SettingsForm::load(&home);
         self.memory_scroll = 0;
         self.config_scroll = 0;
-        self.status = Some(format!("Cible Mémoire/Config : {}", home.label));
+        self.ext_scroll = 0;
+        self.status = Some(format!("Cible Mémoire/Config/Extensions : {}", home.label));
     }
 
     // --- Édition externe ($EDITOR) ---
@@ -785,7 +818,8 @@ impl App {
         let home = &self.homes[self.active];
         self.pending_edit = match self.section {
             Section::Memory => Some(home.memory_file()),
-            Section::Config => Some(home.settings_file()),
+            // Hooks et plugins activés vivent dans settings.json.
+            Section::Config | Section::Extensions => Some(home.settings_file()),
             Section::Browse => None,
         };
     }
@@ -796,6 +830,7 @@ impl App {
         let home = self.homes[self.active].clone();
         self.memory_lines = read_file_lines(home.memory_file(), "(aucune mémoire utilisateur)");
         self.config_lines = build_config_lines(&home);
+        self.extensions = read_extensions(&home);
         self.settings = SettingsForm::load(&home);
     }
 
@@ -1832,6 +1867,8 @@ mod tests {
         app.next_section();
         assert_eq!(app.section, Section::Config);
         app.next_section();
+        assert_eq!(app.section, Section::Extensions);
+        app.next_section();
         assert_eq!(app.section, Section::Browse);
     }
 
@@ -2082,6 +2119,42 @@ mod tests {
 
         assert!(b.join("s1.jsonl").exists(), "session déplacée dans B");
         assert!(!a.join("s1.jsonl").exists(), "retirée de A");
+    }
+
+    #[test]
+    fn extensions_section_loads_hooks_plugins_mcp() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        fs::write(
+            base.join("settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo hi"}]}]},"enabledPlugins":{"foo@m":true}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(base.join("plugins")).unwrap();
+        fs::write(
+            base.join("plugins/installed_plugins.json"),
+            r#"{"version":1,"plugins":{"foo@m":[{"scope":"user","version":"1.0.0"}]}}"#,
+        )
+        .unwrap();
+        fs::write(
+            base.join(".claude.json"),
+            r#"{"mcpServers":{"fs":{"command":"npx","args":["server"]}}}"#,
+        )
+        .unwrap();
+
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        // Tab parcourt jusqu'à Extensions.
+        app.set_section(Section::Config);
+        app.next_section();
+        assert_eq!(app.section, Section::Extensions);
+
+        assert_eq!(app.extensions.hooks.len(), 1);
+        assert_eq!(app.extensions.hooks[0].event, "PreToolUse");
+        assert_eq!(app.extensions.plugins.len(), 1);
+        assert!(app.extensions.plugins[0].enabled);
+        assert_eq!(app.extensions.mcp.len(), 1);
+        assert_eq!(app.extensions.mcp[0].name, "fs");
     }
 
     #[test]

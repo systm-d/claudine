@@ -260,6 +260,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('1') => app.set_section(Section::Browse),
         KeyCode::Char('2') => app.set_section(Section::Memory),
         KeyCode::Char('3') => app.set_section(Section::Config),
+        KeyCode::Char('4') => app.set_section(Section::Extensions),
         KeyCode::Tab => app.next_section(),
         // Shift-Tab bascule le focus entre panneaux dans Browse.
         KeyCode::BackTab => app.toggle_focus(),
