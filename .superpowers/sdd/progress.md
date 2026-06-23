@@ -50,3 +50,4 @@ Groupes repliables: complete (commit ci-dessus) — Espace replie/déplie un hom
 Import TUI: complete (commit ci-dessus) — i: saisie chemin, aperçu dry_run, w écraser, Entrée applique. 85 tests verts.
 Section Extensions: complete (commit ci-dessus) — touche 4, hooks/plugins/MCP en lecture. 90 tests verts.
 Suppr. projet: complete (commit ci-dessus) — d sur Projets supprime le projet entier (corbeille), corrige ~ (0 sess.). 93 tests verts.
+Fix corbeille: complete (commit ci-dessus) — entrées par dossier supprimé (projets vides visibles/restaurables). 93 tests verts.
