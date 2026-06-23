@@ -48,3 +48,4 @@ Purge corbeille: complete (commit ci-dessus) — d supprime déf., x vide tout, 
 Recherche live: complete (commit ci-dessus) — filtre chemin/id à la frappe, Tab=contenu. 82 tests verts.
 Groupes repliables: complete (commit ci-dessus) — Espace replie/déplie un home, z tout. 83 tests verts.
 Import TUI: complete (commit ci-dessus) — i: saisie chemin, aperçu dry_run, w écraser, Entrée applique. 85 tests verts.
+Section Extensions: complete (commit ci-dessus) — touche 4, hooks/plugins/MCP en lecture. 90 tests verts.
