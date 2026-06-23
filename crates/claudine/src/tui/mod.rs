@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod hooks_editor;
+pub mod mcp_editor;
 pub mod settings_form;
 pub mod ui;
 
