@@ -231,6 +231,20 @@ fn read_pairs(v: Option<&Value>) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+fn pairs_to_object(pairs: &[(String, String)]) -> Option<Value> {
+    let mut m = Map::new();
+    for (k, v) in pairs {
+        if !k.trim().is_empty() {
+            m.insert(k.clone(), Value::String(v.clone()));
+        }
+    }
+    if m.is_empty() {
+        None
+    } else {
+        Some(Value::Object(m))
+    }
+}
+
 /// Lit les serveurs MCP de portée utilisateur (`mcpServers` racine) du fichier résolu.
 pub fn read_user_mcp_servers(home: &ClaudeHome) -> Vec<McpServer> {
     let Some(v) = load_json(&mcp_config_path(home)) else {
@@ -261,6 +275,51 @@ pub fn read_user_mcp_servers(home: &ClaudeHome) -> Vec<McpServer> {
         });
     }
     out
+}
+
+/// Réécrit la clé racine `mcpServers` du `.claude.json` résolu à partir du modèle.
+/// Préserve toutes les autres clés ; backup + écriture atomique via SettingsDoc.
+pub fn write_user_mcp_servers(home: &ClaudeHome, servers: &[McpServer]) -> Result<()> {
+    let path = mcp_config_path(home);
+    let mut doc = SettingsDoc::load(&path)?;
+    if servers.is_empty() {
+        doc.unset(&["mcpServers"]);
+        return doc.save(&path);
+    }
+    let mut map: Map<String, Value> = Map::new();
+    for s in servers {
+        let mut o = Map::new();
+        match s.transport {
+            McpTransport::Stdio => {
+                o.insert("type".to_string(), Value::String("stdio".to_string()));
+                o.insert("command".to_string(), Value::String(s.command.clone()));
+                if !s.args.is_empty() {
+                    o.insert(
+                        "args".to_string(),
+                        Value::Array(s.args.iter().map(|a| Value::String(a.clone())).collect()),
+                    );
+                }
+                if let Some(env) = pairs_to_object(&s.env) {
+                    o.insert("env".to_string(), env);
+                }
+            }
+            McpTransport::Http | McpTransport::Sse => {
+                let t = if matches!(s.transport, McpTransport::Http) {
+                    "http"
+                } else {
+                    "sse"
+                };
+                o.insert("type".to_string(), Value::String(t.to_string()));
+                o.insert("url".to_string(), Value::String(s.url.clone()));
+                if let Some(h) = pairs_to_object(&s.headers) {
+                    o.insert("headers".to_string(), h);
+                }
+            }
+        }
+        map.insert(s.name.clone(), Value::Object(o));
+    }
+    doc.set(&["mcpServers"], Value::Object(map));
+    doc.save(&path)
 }
 
 fn load_json(path: &Path) -> Option<Value> {
@@ -639,5 +698,53 @@ mod tests {
         // in-home .claude.json présent → choisi.
         let (_d, home) = home_with(&[(".claude.json", "{}")]);
         assert_eq!(mcp_config_path(&home), home.base.join(".claude.json"));
+    }
+
+    #[test]
+    fn write_user_mcp_servers_round_trips_and_preserves_other_keys() {
+        let cfg = r#"{"numStartups":3,"mcpServers":{"old":{"type":"stdio","command":"x"}}}"#;
+        let (_d, home) = home_with(&[(".claude.json", cfg)]);
+
+        let servers = vec![
+            McpServer {
+                name: "fs".into(),
+                transport: McpTransport::Stdio,
+                command: "npx".into(),
+                args: vec!["-y".into(), "server-fs".into()],
+                env: vec![("TOKEN".into(), "x".into())],
+                ..Default::default()
+            },
+            McpServer {
+                name: "db".into(),
+                transport: McpTransport::Http,
+                url: "http://localhost:1".into(),
+                headers: vec![("Authorization".into(), "Bearer y".into())],
+                ..Default::default()
+            },
+        ];
+        write_user_mcp_servers(&home, &servers).unwrap();
+
+        let back = read_user_mcp_servers(&home);
+        assert_eq!(back.len(), 2);
+        let fs = back.iter().find(|s| s.name == "fs").unwrap();
+        assert_eq!(fs.args, vec!["-y", "server-fs"]);
+        assert_eq!(fs.env, vec![("TOKEN".to_string(), "x".to_string())]);
+        let db = back.iter().find(|s| s.name == "db").unwrap();
+        assert!(matches!(db.transport, McpTransport::Http));
+        assert_eq!(db.url, "http://localhost:1");
+        // Autre clé racine préservée.
+        let doc = crate::settings::SettingsDoc::load(&mcp_config_path(&home)).unwrap();
+        assert_eq!(doc.get_i64(&["numStartups"]), Some(3));
+    }
+
+    #[test]
+    fn write_user_mcp_servers_empty_removes_key() {
+        let cfg = r#"{"numStartups":1,"mcpServers":{"old":{"command":"x"}}}"#;
+        let (_d, home) = home_with(&[(".claude.json", cfg)]);
+        write_user_mcp_servers(&home, &[]).unwrap();
+        assert!(read_user_mcp_servers(&home).is_empty());
+        let doc = crate::settings::SettingsDoc::load(&mcp_config_path(&home)).unwrap();
+        assert!(doc.get(&["mcpServers"]).is_none());
+        assert_eq!(doc.get_i64(&["numStartups"]), Some(1));
     }
 }
