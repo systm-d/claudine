@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use claudine_core::{
     apply as import_apply, decode_encoded_to_path, discover_homes, dry_run as import_dry_run,
     empty_trash, export, find_in_session, list_trash, move_session, purge_trash_item,
-    read_extensions, restore_session, scan_projects, trash_project, trash_session, ClaudeHome,
+    read_extensions, restore_trash_entry, scan_projects, trash_project, trash_session, ClaudeHome,
     ClaudineConfig, Extensions, ExportOptions, ImportOptions, Project, RemapTable, SessionMeta,
 };
 use serde_json::Value;
@@ -109,7 +109,8 @@ pub struct SearchState {
 /// Une entrée de corbeille affichable (avec son home d'origine pour restaurer).
 #[derive(Debug, Clone)]
 pub struct TrashEntry {
-    pub path: PathBuf,
+    /// Dossier de l'entrée en corbeille (`trash/<ts>/<encoded>`).
+    pub dir: PathBuf,
     pub home_base: PathBuf,
     pub label: String,
 }
@@ -1341,16 +1342,19 @@ impl App {
                 let proj = decode_encoded_to_path(&it.encoded)
                     .map(|p| humanize_path(&p))
                     .unwrap_or_else(|| it.encoded.clone());
-                let id8: String = it
-                    .file_name
-                    .trim_end_matches(".jsonl")
-                    .chars()
-                    .take(8)
-                    .collect();
+                // Détail : id de session unique, ou nombre de sessions, ou « vide ».
+                let detail = match (it.sessions, it.sample.as_deref()) {
+                    (1, Some(id)) => {
+                        let id8: String = id.chars().take(8).collect();
+                        format!("session {id8}")
+                    }
+                    (0, _) => "projet vide".to_string(),
+                    (n, _) => format!("{n} sessions"),
+                };
                 items.push(TrashEntry {
-                    path: it.path,
+                    dir: it.dir,
                     home_base: h.base.clone(),
-                    label: format!("{id8}  {proj}  ⟨{}⟩", h.label),
+                    label: format!("{proj}  ⟨{}⟩  · {detail}", h.label),
                 });
             }
         }
@@ -1387,10 +1391,10 @@ impl App {
             },
             None => return,
         };
-        match restore_session(&entry.path, &entry.home_base) {
+        match restore_trash_entry(&entry.dir, &entry.home_base) {
             Ok(dest) => {
                 if let Some(t) = &mut self.trash_view {
-                    t.items.retain(|e| e.path != entry.path);
+                    t.items.retain(|e| e.dir != entry.dir);
                     if t.items.is_empty() {
                         self.trash_view = None;
                     } else {
@@ -1399,7 +1403,7 @@ impl App {
                 }
                 self.reload_projects();
                 self.clamp_browse_indices();
-                self.status = Some(format!("Restaurée → {}", dest.display()));
+                self.status = Some(format!("Restauré → {}", dest.display()));
             }
             Err(e) => self.status = Some(format!("Échec restauration : {e}")),
         }
@@ -1449,10 +1453,10 @@ impl App {
                         return;
                     }
                 };
-                match purge_trash_item(&entry.path) {
+                match purge_trash_item(&entry.dir) {
                     Ok(()) => {
                         if let Some(t) = &mut self.trash_view {
-                            t.items.retain(|e| e.path != entry.path);
+                            t.items.retain(|e| e.dir != entry.dir);
                             t.confirm = None;
                             if t.items.is_empty() {
                                 self.trash_view = None;
@@ -1460,7 +1464,7 @@ impl App {
                                 t.idx = t.idx.min(t.items.len() - 1);
                             }
                         }
-                        self.status = Some("Session supprimée définitivement".to_string());
+                        self.status = Some("Entrée supprimée définitivement".to_string());
                     }
                     Err(e) => {
                         self.trash_confirm_cancel();
@@ -1474,7 +1478,7 @@ impl App {
                     total += empty_trash(&h.base).unwrap_or(0);
                 }
                 self.trash_view = None;
-                self.status = Some(format!("Corbeille vidée ({total} session(s))"));
+                self.status = Some(format!("Corbeille vidée ({total} entrée(s))"));
             }
         }
     }
@@ -2384,14 +2388,14 @@ mod tests {
         app.confirm_delete_apply();
 
         app.open_trash();
-        let trashed = app.trash_view.as_ref().unwrap().items[0].path.clone();
+        let trashed = app.trash_view.as_ref().unwrap().items[0].dir.clone();
         // Demande de purge → confirmation requise avant suppression.
         app.trash_request_purge();
         assert_eq!(app.trash_view.as_ref().unwrap().confirm, Some(PurgeScope::One));
         assert!(trashed.exists(), "rien supprimé avant confirmation");
 
         app.trash_confirm_apply();
-        assert!(!trashed.exists(), "session supprimée définitivement");
+        assert!(!trashed.exists(), "entrée supprimée définitivement");
         assert!(app.trash_view.is_none(), "corbeille vidée → fermée");
         assert!(!pdir.join("aaaa.jsonl").exists(), "non restaurable");
     }
@@ -2418,7 +2422,10 @@ mod tests {
         app.confirm_delete_apply();
 
         app.open_trash();
-        assert_eq!(app.trash_view.as_ref().unwrap().items.len(), 2);
+        assert!(!app.trash_view.as_ref().unwrap().items.is_empty());
+        // Robuste à un éventuel partage d'horodatage : 2 sessions au total.
+        let sessions: usize = list_trash(dir.path()).iter().map(|e| e.sessions).sum();
+        assert_eq!(sessions, 2);
         app.trash_request_empty();
         assert_eq!(app.trash_view.as_ref().unwrap().confirm, Some(PurgeScope::All));
         app.trash_confirm_apply();

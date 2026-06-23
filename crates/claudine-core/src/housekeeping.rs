@@ -144,16 +144,43 @@ pub fn move_session(
     Ok(dest)
 }
 
-/// Une session en corbeille : `<home>/trash/<horodatage>/<encoded>/<fichier>`.
+/// Une entrée de corbeille = un évènement de suppression : le dossier
+/// `<home>/trash/<horodatage>/<encoded>/` et son contenu (une session, un
+/// projet entier, ou un projet vide). Restaurée / purgée comme un tout.
 #[derive(Debug, Clone)]
 pub struct TrashItem {
-    pub path: PathBuf,
+    /// Dossier `trash/<horodatage>/<encoded>`.
+    pub dir: PathBuf,
     pub encoded: String,
-    pub file_name: String,
+    /// Nombre de sessions (`.jsonl`) contenues.
+    pub sessions: usize,
+    /// Nombre total de fichiers contenus.
+    pub files: usize,
     pub size: u64,
+    /// Id de session si l'entrée n'en contient qu'une (pour l'affichage).
+    pub sample: Option<String>,
 }
 
-/// Liste les sessions présentes dans la corbeille d'un home.
+/// Élague les dossiers vides en remontant depuis `start`, sans jamais retirer
+/// le dossier `trash` lui-même.
+fn prune_empty_dirs(start: &Path) {
+    let mut cur = Some(start.to_path_buf());
+    while let Some(d) = cur {
+        if d.file_name().map(|n| n == "trash").unwrap_or(false) {
+            break;
+        }
+        let empty = match fs::read_dir(&d) {
+            Ok(mut rd) => rd.next().is_none(),
+            Err(_) => false,
+        };
+        if !empty || fs::remove_dir(&d).is_err() {
+            break; // non vide, illisible, ou suppression impossible : on s'arrête.
+        }
+        cur = d.parent().map(|p| p.to_path_buf());
+    }
+}
+
+/// Liste les entrées de la corbeille d'un home (une par dossier supprimé).
 pub fn list_trash(home_base: &Path) -> Vec<TrashItem> {
     let trash = home_base.join("trash");
     let mut items = Vec::new();
@@ -168,80 +195,99 @@ pub fn list_trash(home_base: &Path) -> Vec<TrashItem> {
             continue;
         };
         for enc in enc_dirs.flatten() {
-            if !enc.path().is_dir() {
+            let dir = enc.path();
+            if !dir.is_dir() {
                 continue;
             }
             let encoded = enc.file_name().to_string_lossy().into_owned();
-            let Ok(files) = fs::read_dir(enc.path()) else {
+            let mut sessions = 0usize;
+            let mut files = 0usize;
+            let mut size = 0u64;
+            let mut sample = None;
+            let Ok(fes) = fs::read_dir(&dir) else {
                 continue;
             };
-            for fe in files.flatten() {
+            for fe in fes.flatten() {
                 let fp = fe.path();
+                if !fp.is_file() {
+                    continue;
+                }
+                files += 1;
+                size += fe.metadata().map(|m| m.len()).unwrap_or(0);
                 if fp.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                    items.push(TrashItem {
-                        size: fe.metadata().map(|m| m.len()).unwrap_or(0),
-                        path: fp,
-                        encoded: encoded.clone(),
-                        file_name: fe.file_name().to_string_lossy().into_owned(),
-                    });
+                    sessions += 1;
+                    sample = fp.file_stem().map(|s| s.to_string_lossy().into_owned());
                 }
             }
+            if files == 0 {
+                continue;
+            }
+            items.push(TrashItem {
+                dir,
+                encoded,
+                sessions,
+                files,
+                size,
+                sample: if sessions == 1 { sample } else { None },
+            });
         }
     }
-    items.sort_by(|a, b| a.path.cmp(&b.path));
+    items.sort_by(|a, b| a.dir.cmp(&b.dir));
     items
 }
 
-/// Restaure une session de la corbeille vers `<home>/projects/<encoded>/<fichier>`.
-/// Échoue (sans rien casser) si la destination existe déjà.
-pub fn restore_session(trash_path: &Path, home_base: &Path) -> Result<PathBuf> {
-    let file_name = trash_path
+/// Restaure une entrée de corbeille vers `<home>/projects/<encoded>/` (tous ses
+/// fichiers). Échoue **sans rien toucher** si un fichier de destination existe déjà.
+pub fn restore_trash_entry(trash_dir: &Path, home_base: &Path) -> Result<PathBuf> {
+    let encoded = trash_dir
         .file_name()
-        .ok_or_else(|| CoreError::BundleFormat("chemin de corbeille invalide".to_string()))?;
-    // L'`encoded` est le dossier parent du fichier en corbeille.
-    let encoded = trash_path
-        .parent()
-        .and_then(|p| p.file_name())
         .map(|s| s.to_string_lossy().into_owned())
         .ok_or_else(|| CoreError::BundleFormat("structure de corbeille invalide".to_string()))?;
+    let files: Vec<PathBuf> = fs::read_dir(trash_dir)
+        .map_err(|e| CoreError::io(trash_dir, e))?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
     let dest_dir = home_base.join("projects").join(&encoded);
-    fs::create_dir_all(&dest_dir).map_err(|e| CoreError::io(&dest_dir, e))?;
-    let dest = dest_dir.join(file_name);
-    if dest.exists() {
-        return Err(CoreError::Conflict(format!(
-            "déjà présent : {}",
-            dest.display()
-        )));
+    // Pré-vérifie tous les conflits avant de bouger quoi que ce soit.
+    for f in &files {
+        if let Some(name) = f.file_name() {
+            let dest = dest_dir.join(name);
+            if dest.exists() {
+                return Err(CoreError::Conflict(format!(
+                    "déjà présent : {}",
+                    dest.display()
+                )));
+            }
+        }
     }
-    move_file(trash_path, &dest)?;
-    Ok(dest)
+    fs::create_dir_all(&dest_dir).map_err(|e| CoreError::io(&dest_dir, e))?;
+    for f in &files {
+        if let Some(name) = f.file_name() {
+            move_file(f, &dest_dir.join(name))?;
+        }
+    }
+    prune_empty_dirs(trash_dir);
+    Ok(dest_dir)
 }
 
-/// Supprime **définitivement** une session de la corbeille (non récupérable) et
-/// élague les dossiers parents devenus vides (`<encoded>/`, `<horodatage>/`),
-/// sans jamais retirer le dossier `trash` lui-même.
-pub fn purge_trash_item(trash_path: &Path) -> Result<()> {
-    fs::remove_file(trash_path).map_err(|e| CoreError::io(trash_path, e))?;
-    // Remonte en élaguant les dossiers vides, jusqu'au dossier `trash` exclu.
-    let mut dir = trash_path.parent();
-    while let Some(d) = dir {
-        if d.file_name().map(|n| n == "trash").unwrap_or(false) {
-            break;
-        }
-        let empty = match fs::read_dir(d) {
-            Ok(mut rd) => rd.next().is_none(),
-            Err(_) => false,
-        };
-        if !empty || fs::remove_dir(d).is_err() {
-            break; // non vide, illisible, ou suppression impossible : on s'arrête.
-        }
-        dir = d.parent();
+/// Supprime **définitivement** une entrée de corbeille (le dossier entier,
+/// non récupérable) et élague les dossiers parents devenus vides.
+pub fn purge_trash_item(trash_dir: &Path) -> Result<()> {
+    if trash_dir.is_dir() {
+        fs::remove_dir_all(trash_dir).map_err(|e| CoreError::io(trash_dir, e))?;
+    } else if trash_dir.exists() {
+        fs::remove_file(trash_dir).map_err(|e| CoreError::io(trash_dir, e))?;
+    }
+    if let Some(parent) = trash_dir.parent() {
+        prune_empty_dirs(parent);
     }
     Ok(())
 }
 
-/// Vide **toute** la corbeille d'un home (non récupérable). Renvoie le nombre de
-/// sessions supprimées.
+/// Vide **toute** la corbeille d'un home (non récupérable). Renvoie le nombre
+/// d'entrées supprimées.
 pub fn empty_trash(home_base: &Path) -> Result<usize> {
     let count = list_trash(home_base).len();
     let trash = home_base.join("trash");
@@ -318,12 +364,13 @@ mod tests {
         let items = list_trash(base);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].encoded, "-home-x-proj");
-        assert_eq!(items[0].file_name, "abc.jsonl");
+        assert_eq!(items[0].sessions, 1);
+        assert_eq!(items[0].sample.as_deref(), Some("abc"));
 
-        let restored = restore_session(&items[0].path, base).unwrap();
-        assert_eq!(restored, sess);
+        let restored = restore_trash_entry(&items[0].dir, base).unwrap();
+        assert_eq!(restored, pdir);
         assert!(sess.exists(), "session restaurée à sa place");
-        assert!(!items[0].path.exists(), "retirée de la corbeille");
+        assert!(!items[0].dir.exists(), "retirée de la corbeille");
     }
 
     #[test]
@@ -340,15 +387,18 @@ mod tests {
         trash_project(base, "-home-x-proj").unwrap();
         assert!(!pdir.exists(), "le dossier projet a disparu de projects/");
 
-        // Les deux sessions apparaissent dans la corbeille et sont restaurables.
+        // Une seule entrée (le projet), restaurée comme un tout : 2 sessions + index.
         let items = list_trash(base);
-        assert_eq!(items.len(), 2);
-        for it in &items {
-            assert_eq!(it.encoded, "-home-x-proj");
-            restore_session(&it.path, base).unwrap();
-        }
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].encoded, "-home-x-proj");
+        assert_eq!(items[0].sessions, 2);
+        assert_eq!(items[0].files, 3);
+
+        restore_trash_entry(&items[0].dir, base).unwrap();
         assert!(pdir.join("a.jsonl").exists());
         assert!(pdir.join("b.jsonl").exists());
+        assert!(pdir.join("sessions-index.json").exists());
+        assert!(list_trash(base).is_empty(), "corbeille vidée après restauration");
     }
 
     #[test]
@@ -377,11 +427,11 @@ mod tests {
         trash_session(base, "-home-x-proj", &sess).unwrap();
         let items = list_trash(base);
         assert_eq!(items.len(), 1);
-        let ts_dir = items[0].path.parent().unwrap().parent().unwrap().to_path_buf();
+        let ts_dir = items[0].dir.parent().unwrap().to_path_buf();
 
-        purge_trash_item(&items[0].path).unwrap();
+        purge_trash_item(&items[0].dir).unwrap();
 
-        assert!(!items[0].path.exists(), "fichier supprimé définitivement");
+        assert!(!items[0].dir.exists(), "entrée supprimée définitivement");
         assert!(!ts_dir.exists(), "dossiers parents vides élagués");
         assert!(base.join("trash").exists(), "le dossier trash subsiste");
         assert!(list_trash(base).is_empty());
