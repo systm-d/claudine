@@ -12,6 +12,7 @@ use ratatui::{
 
 use super::app::{App, BrowseView, DeleteKind, Focus, PickerMode, PurgeScope, Section};
 use crate::tui::app::{human_size, humanize_path};
+use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
 use claudine_core::scan_projects;
 
 const ACCENT: Color = Color::Cyan;
@@ -23,7 +24,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // header + onglets
+            Constraint::Length(5), // header : onglets + logo Claude
             Constraint::Min(1),    // corps
             Constraint::Length(1), // ligne de statut
             Constraint::Length(1), // pied (raccourcis)
@@ -75,6 +76,12 @@ pub fn render(app: &mut App, f: &mut Frame) {
     if app.import.is_some() {
         render_import(app, f, area);
     }
+    if app.hooks_editor.is_some() {
+        render_hooks_editor(app, f, area);
+    }
+    if app.plugins_toggle.is_some() {
+        render_plugins_toggle(app, f, area);
+    }
 
     if app.show_picker {
         render_picker(app, f, area);
@@ -83,6 +90,16 @@ pub fn render(app: &mut App, f: &mut Frame) {
     if app.show_help {
         render_help(f, area);
     }
+}
+
+/// Logo Claude Code (petite créature pixel) en demi-blocs, couleur Claude.
+fn claude_logo_lines() -> Vec<Line<'static>> {
+    let o = Style::default().fg(Color::Rgb(0xd9, 0x77, 0x57));
+    vec![
+        Line::from(Span::styled(" ██▀███▀██ ", o)),
+        Line::from(Span::styled("▀█████████▀", o)),
+        Line::from(Span::styled("  ▀ ▀ ▀ ▀  ", o)),
+    ]
 }
 
 fn render_header(app: &App, f: &mut Frame, area: Rect) {
@@ -96,16 +113,18 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
     .map(|s| Line::from(format!(" {} ", s.title())))
     .collect::<Vec<_>>();
     let title = format!(" Claudine · {} ", app.active_label());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            title,
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(" h homes · / chercher · ? aide ").right_aligned());
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Onglets sur la première ligne intérieure.
     let tabs = Tabs::new(titles)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(Span::styled(
-                    title,
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                ))
-                .title(Line::from(" h homes · / chercher · ? aide ").right_aligned()),
-        )
         .select(app.section.index())
         .highlight_style(
             Style::default()
@@ -114,7 +133,23 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )
         .divider(Span::styled("│", Style::default().fg(DIM)));
-    f.render_widget(tabs, area);
+    let tabs_area = Rect {
+        height: 1,
+        ..inner
+    };
+    f.render_widget(tabs, tabs_area);
+
+    // Logo Claude aligné à droite, sur les 3 lignes intérieures (si assez large).
+    const LOGO_W: u16 = 11;
+    if inner.width > 55 && inner.height >= 3 {
+        let logo_area = Rect {
+            x: inner.x + inner.width - LOGO_W - 1,
+            y: inner.y,
+            width: LOGO_W,
+            height: 3,
+        };
+        f.render_widget(Paragraph::new(claude_logo_lines()), logo_area);
+    }
 }
 
 fn render_browse(app: &mut App, f: &mut Frame, area: Rect) {
@@ -834,10 +869,11 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
         ]),
         Section::Extensions => key_hints(&[
             ("Tab/1·2·3·4", "sections"),
-            ("↑/↓ PgUp/Dn", "défiler"),
+            ("Enter", "éditer hooks"),
+            ("p", "plugins"),
+            ("↑/↓", "défiler"),
             ("t", "cible"),
-            ("E", "éditer settings"),
-            ("h", "homes"),
+            ("E", "settings.json"),
             ("?", "aide"),
         ]),
         _ => key_hints(&[
@@ -865,7 +901,7 @@ fn render_help(f: &mut Frame, area: Rect) {
     let rows = [
         ("1 / 2 / 3 / 4", "Projets / Mémoire / Config / Extensions"),
         ("Tab", "section suivante"),
-        ("Extensions", "hooks · plugins · MCP (lecture ; E édite settings.json)"),
+        ("Extensions", "hooks · plugins · MCP (lecture) ; Enter édite les hooks, p (dés)active les plugins"),
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
@@ -1366,6 +1402,163 @@ fn render_import(app: &App, f: &mut Frame, area: Rect) {
         }
     }
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Modal de l'éditeur de hooks.
+fn render_hooks_editor(app: &App, f: &mut Frame, area: Rect) {
+    let Some(e) = &app.hooks_editor else {
+        return;
+    };
+    let popup = centered_rect(80, 70, area);
+    f.render_widget(Clear, popup);
+    let hint = match e.level {
+        HooksLevel::Groups => " a ajouter · Enter ouvrir · d suppr. · s enregistrer · Esc fermer ",
+        HooksLevel::Group => " a commande · Enter éditer · t timeout · d suppr. · s enregistrer · Esc retour ",
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Éditeur de hooks ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(hint).right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = Vec::new();
+    match e.level {
+        HooksLevel::Groups => {
+            if e.groups.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "  (aucun hook — 'a' pour en ajouter)",
+                    Style::default().fg(DIM),
+                )));
+            }
+            for (i, g) in e.groups.iter().enumerate() {
+                let sel = i == e.group_idx;
+                let matcher = g
+                    .matcher
+                    .as_deref()
+                    .map(|m| format!(" [{m}]"))
+                    .unwrap_or_default();
+                let txt = format!(
+                    "{} {}{}  · {} cmd",
+                    if sel { "▶" } else { " " },
+                    g.event,
+                    matcher,
+                    g.commands.len()
+                );
+                let style = if sel {
+                    selection_style(true)
+                } else {
+                    Style::default()
+                };
+                lines.push(Line::from(Span::styled(txt, style)));
+            }
+        }
+        HooksLevel::Group => {
+            let g = match e.groups.get(e.group_idx) {
+                Some(g) => g,
+                None => return,
+            };
+            let row = |sel: bool, label: String| {
+                let style = if sel {
+                    selection_style(true)
+                } else {
+                    Style::default()
+                };
+                Line::from(Span::styled(label, style))
+            };
+            lines.push(row(
+                e.field_idx == 0,
+                format!("  Évènement : {}", g.event),
+            ));
+            lines.push(row(
+                e.field_idx == 1,
+                format!(
+                    "  Matcher   : {}",
+                    g.matcher.as_deref().unwrap_or("(aucun)")
+                ),
+            ));
+            for (ci, c) in g.commands.iter().enumerate() {
+                let to = c
+                    .timeout
+                    .map(|t| format!("  (timeout {t}s)"))
+                    .unwrap_or_default();
+                lines.push(row(
+                    e.field_idx == ci + 2,
+                    format!("    $ {}{}", c.command, to),
+                ));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                format!("  évènements connus : {}", KNOWN_EVENTS.join(", ")),
+                Style::default().fg(DIM),
+            )));
+        }
+    }
+
+    // Bandeau de saisie ou de confirmation.
+    if let HookEdit::Text(buf) = &e.edit {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  Saisie : ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(buf.clone()),
+            Span::styled("▏", Style::default().fg(ACCENT)),
+        ]));
+    } else if e.confirm_delete {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Supprimer l'élément sélectionné ? (o/n)",
+            Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+/// Modal de bascule activer/désactiver des plugins.
+fn render_plugins_toggle(app: &App, f: &mut Frame, area: Rect) {
+    let Some(pt) = &app.plugins_toggle else {
+        return;
+    };
+    let popup = centered_rect(70, 60, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Plugins — activer / désactiver ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(" Espace bascule · s enregistrer · Esc fermer ").right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let items: Vec<ListItem> = pt
+        .items
+        .iter()
+        .map(|it| {
+            let (mark, mstyle) = if it.enabled {
+                ("✓", Style::default().fg(Color::Green))
+            } else {
+                ("✗", Style::default().fg(DIM))
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!(" {mark} "), mstyle),
+                Span::raw(it.name.clone()),
+            ]))
+        })
+        .collect();
+    let list = List::new(items)
+        .highlight_style(selection_style(true))
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    if !pt.items.is_empty() {
+        state.select(Some(pt.idx.min(pt.items.len() - 1)));
+    }
+    f.render_stateful_widget(list, inner, &mut state);
 }
 
 // --- Helpers de style/layout ---

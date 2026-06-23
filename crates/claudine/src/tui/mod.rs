@@ -1,6 +1,7 @@
 //! Interface TUI Claudine : configuration du terminal, boucle d'évènements.
 
 pub mod app;
+pub mod hooks_editor;
 pub mod settings_form;
 pub mod ui;
 
@@ -181,6 +182,25 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Éditeur de hooks (modal).
+    if app.hooks_editor.is_some() {
+        handle_hooks_editor_key(app, key);
+        return;
+    }
+
+    // Bascule des plugins (modal).
+    if app.plugins_toggle.is_some() {
+        match key.code {
+            KeyCode::Esc => app.plugins_toggle_cancel(),
+            KeyCode::Up | KeyCode::Char('k') => app.plugins_toggle_move(-1),
+            KeyCode::Down | KeyCode::Char('j') => app.plugins_toggle_move(1),
+            KeyCode::Char(' ') => app.plugins_toggle_flip(),
+            KeyCode::Char('s') => app.plugins_toggle_save(),
+            _ => {}
+        }
+        return;
+    }
+
     // Assistant d'import : saisie du chemin, puis aperçu/confirmation.
     if app.import.is_some() {
         let in_preview = app
@@ -271,6 +291,9 @@ fn handle_key(app: &mut App, key: KeyEvent) {
 
         KeyCode::Enter => app.on_enter(),
 
+        // Section Extensions : modal de bascule des plugins.
+        KeyCode::Char('p') => app.open_plugins_toggle(),
+
         // Ménage des sessions (focus Sessions dans Browse).
         KeyCode::Char('d') | KeyCode::Delete => app.request_delete(),
         KeyCode::Char('m') => app.request_move_session(),
@@ -344,5 +367,74 @@ fn handle_settings_edit_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => s.list_begin_edit(),
         KeyCode::Char('d') => s.list_delete(),
         _ => {}
+    }
+}
+
+fn handle_hooks_editor_key(app: &mut App, key: KeyEvent) {
+    use crate::tui::hooks_editor::HooksLevel;
+
+    // `s` (enregistrer) et `Esc` (annuler) codent une action différée sur `app`
+    // (nécessite de relâcher le borrow de `hooks_editor` avant d'appeler
+    // `hooks_save`/`hooks_cancel`).
+    enum Deferred { Save, Cancel }
+    let deferred: Option<Deferred>;
+
+    {
+        let Some(e) = app.hooks_editor.as_mut() else {
+            return;
+        };
+        // Confirmation de suppression prioritaire.
+        if e.confirm_delete {
+            match key.code {
+                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                | KeyCode::Enter => e.apply_delete(),
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => e.confirm_delete = false,
+                _ => {}
+            }
+            return;
+        }
+        // Saisie d'un champ.
+        if e.editing() {
+            match key.code {
+                KeyCode::Esc => e.input_cancel(),
+                KeyCode::Enter => e.input_commit(),
+                KeyCode::Backspace => e.input_backspace(),
+                KeyCode::Char(c) => e.input_char(c),
+                _ => {}
+            }
+            return;
+        }
+        // Navigation.
+        deferred = match key.code {
+            KeyCode::Up | KeyCode::Char('k') => { e.move_sel(-1); None }
+            KeyCode::Down | KeyCode::Char('j') => { e.move_sel(1); None }
+            KeyCode::Char('a') => {
+                match e.level {
+                    HooksLevel::Groups => e.add_group(),
+                    HooksLevel::Group => e.add_command(),
+                }
+                None
+            }
+            KeyCode::Char('d') => { e.delete_current(); None }
+            KeyCode::Char('t') => { e.begin_edit_timeout(); None }
+            KeyCode::Enter => {
+                match e.level {
+                    HooksLevel::Groups => e.enter(),
+                    HooksLevel::Group => e.begin_edit(),
+                }
+                None
+            }
+            KeyCode::Char('s') => Some(Deferred::Save),
+            KeyCode::Esc => {
+                if e.back() { None } else { Some(Deferred::Cancel) }
+            }
+            _ => None,
+        };
+    } // libère le borrow sur app.hooks_editor
+
+    match deferred {
+        Some(Deferred::Save) => app.hooks_save(),
+        Some(Deferred::Cancel) => app.hooks_cancel(),
+        None => {}
     }
 }
