@@ -1019,7 +1019,27 @@ impl App {
     }
 
     /// Enregistre les hooks édités dans settings.json du home actif.
+    /// Bloque l'enregistrement si un évènement ou une commande est vide.
     pub fn hooks_save(&mut self) {
+        // Valide avant de consommer l'éditeur : on reste ouvert en cas d'erreur.
+        if let Some(editor) = self.hooks_editor.as_ref() {
+            for g in &editor.groups {
+                if g.event.trim().is_empty() {
+                    self.status = Some(
+                        "Enregistrement bloqué : évènement vide".to_string(),
+                    );
+                    return;
+                }
+                for cmd in &g.commands {
+                    if cmd.command.trim().is_empty() {
+                        self.status = Some(
+                            "Enregistrement bloqué : commande vide".to_string(),
+                        );
+                        return;
+                    }
+                }
+            }
+        }
         let Some(editor) = self.hooks_editor.take() else {
             return;
         };
@@ -2645,6 +2665,45 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].event, "PreToolUse");
         assert_eq!(groups[0].commands[0].command, "echo hi");
+    }
+
+    #[test]
+    fn hooks_save_blocked_on_empty_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        fs::write(base.join("settings.json"), "{}").unwrap();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        app.set_section(Section::Extensions);
+
+        app.open_hooks_editor();
+        {
+            let e = app.hooks_editor.as_mut().unwrap();
+            e.add_group();
+            e.enter();
+            e.add_command(); // commande vide (String::new())
+        }
+        // Enregistrement bloqué : l'éditeur doit rester ouvert.
+        app.hooks_save();
+        assert!(app.hooks_editor.is_some(), "éditeur toujours ouvert");
+        let status = app.status.as_deref().unwrap_or("");
+        assert!(status.contains("bloqué"), "statut indique le blocage : {status}");
+
+        // Aucune écriture ne doit avoir eu lieu.
+        let groups = claudine_core::read_hook_groups(app.home());
+        assert!(groups.is_empty(), "rien écrit dans settings.json");
+
+        // Cas passant : on renseigne la commande et on enregistre.
+        {
+            let e = app.hooks_editor.as_mut().unwrap();
+            let cmd = &mut e.groups[0].commands[0];
+            cmd.command = "echo ok".to_string();
+        }
+        app.hooks_save();
+        assert!(app.hooks_editor.is_none(), "fermé après enregistrement valide");
+        let groups = claudine_core::read_hook_groups(app.home());
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].commands[0].command, "echo ok");
     }
 
     #[test]

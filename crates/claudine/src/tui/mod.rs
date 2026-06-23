@@ -373,8 +373,9 @@ fn handle_settings_edit_key(app: &mut App, key: KeyEvent) {
 fn handle_hooks_editor_key(app: &mut App, key: KeyEvent) {
     use crate::tui::hooks_editor::HooksLevel;
 
-    // `s` et `c` codent une action différée sur `app` (nécessite de relâcher
-    // le borrow de `hooks_editor` avant d'appeler `hooks_save`/`hooks_cancel`).
+    // `s` (enregistrer) et `Esc` (annuler) codent une action différée sur `app`
+    // (nécessite de relâcher le borrow de `hooks_editor` avant d'appeler
+    // `hooks_save`/`hooks_cancel`).
     enum Deferred { Save, Cancel }
     let deferred: Option<Deferred>;
 
