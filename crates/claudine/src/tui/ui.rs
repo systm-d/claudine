@@ -13,7 +13,8 @@ use ratatui::{
 use super::app::{App, BrowseView, DeleteKind, Focus, PickerMode, PurgeScope, Section};
 use crate::tui::app::{human_size, humanize_path};
 use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
-use claudine_core::scan_projects;
+use crate::tui::mcp_editor::{McpEdit, McpLevel, McpRow};
+use claudine_core::{scan_projects, McpTransport};
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
@@ -81,6 +82,9 @@ pub fn render(app: &mut App, f: &mut Frame) {
     }
     if app.plugins_toggle.is_some() {
         render_plugins_toggle(app, f, area);
+    }
+    if app.mcp_editor.is_some() {
+        render_mcp_editor(app, f, area);
     }
 
     if app.show_picker {
@@ -868,12 +872,12 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("?", "aide"),
         ]),
         Section::Extensions => key_hints(&[
-            ("Tab/1·2·3·4", "sections"),
-            ("Enter", "éditer hooks"),
+            ("Enter", "hooks"),
             ("p", "plugins"),
+            ("m", "MCP"),
             ("↑/↓", "défiler"),
             ("t", "cible"),
-            ("E", "settings.json"),
+            ("E", "settings"),
             ("?", "aide"),
         ]),
         _ => key_hints(&[
@@ -901,7 +905,7 @@ fn render_help(f: &mut Frame, area: Rect) {
     let rows = [
         ("1 / 2 / 3 / 4", "Projets / Mémoire / Config / Extensions"),
         ("Tab", "section suivante"),
-        ("Extensions", "hooks · plugins · MCP (lecture) ; Enter édite les hooks, p (dés)active les plugins"),
+        ("Extensions", "hooks (Enter) · plugins (p) · serveurs MCP (m) — éditables ; E édite settings.json"),
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
@@ -1559,6 +1563,112 @@ fn render_plugins_toggle(app: &App, f: &mut Frame, area: Rect) {
         state.select(Some(pt.idx.min(pt.items.len() - 1)));
     }
     f.render_stateful_widget(list, inner, &mut state);
+}
+
+/// Modal de l'éditeur de serveurs MCP.
+fn render_mcp_editor(app: &App, f: &mut Frame, area: Rect) {
+    let Some(e) = &app.mcp_editor else {
+        return;
+    };
+    let popup = centered_rect(82, 72, area);
+    f.render_widget(Clear, popup);
+    let hint = match e.level {
+        McpLevel::Servers => " a ajouter · Enter ouvrir · d suppr. · s enregistrer · Esc fermer ",
+        McpLevel::Server => " ←/→ type · Enter éditer · a ajouter · d suppr. · s enregistrer · Esc retour ",
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Éditeur de serveurs MCP ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(hint).right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = Vec::new();
+    match e.level {
+        McpLevel::Servers => {
+            if e.servers.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "  (aucun serveur — 'a' pour en ajouter)",
+                    Style::default().fg(DIM),
+                )));
+            }
+            for (i, s) in e.servers.iter().enumerate() {
+                let sel = i == e.server_idx;
+                let t = match s.transport {
+                    McpTransport::Stdio => "stdio",
+                    McpTransport::Http => "http",
+                    McpTransport::Sse => "sse",
+                };
+                let label = format!("{} {}  [{}]", if sel { "▶" } else { " " }, s.name, t);
+                let style = if sel {
+                    selection_style(true)
+                } else {
+                    Style::default()
+                };
+                lines.push(Line::from(Span::styled(label, style)));
+            }
+        }
+        McpLevel::Server => {
+            let Some(s) = e.servers.get(e.server_idx) else {
+                return;
+            };
+            let rows = e.rows();
+            for (i, row) in rows.iter().enumerate() {
+                let sel = i == e.field_idx;
+                let text = match *row {
+                    McpRow::Name => format!("  Nom      : {}", s.name),
+                    McpRow::Type => {
+                        let t = match s.transport {
+                            McpTransport::Stdio => "stdio",
+                            McpTransport::Http => "http",
+                            McpTransport::Sse => "sse",
+                        };
+                        format!("  Type     : {t}   (←/→)")
+                    }
+                    McpRow::Command => format!("  Command  : {}", s.command),
+                    McpRow::Url => format!("  URL      : {}", s.url),
+                    McpRow::Arg(i) => format!("    arg[{i}] : {}", s.args.get(i).cloned().unwrap_or_default()),
+                    McpRow::Env(i) => {
+                        let (k, v) = s.env.get(i).cloned().unwrap_or_default();
+                        format!("    env     : {k}={v}")
+                    }
+                    McpRow::Header(i) => {
+                        let (k, v) = s.headers.get(i).cloned().unwrap_or_default();
+                        format!("    header  : {k}={v}")
+                    }
+                };
+                let style = if sel {
+                    selection_style(true)
+                } else {
+                    Style::default()
+                };
+                lines.push(Line::from(Span::styled(text, style)));
+            }
+        }
+    }
+
+    if let McpEdit::Text(buf) = &e.edit {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  Saisie : ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(buf.clone()),
+            Span::styled("▏", Style::default().fg(ACCENT)),
+        ]));
+    } else if e.confirm_delete {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Supprimer l'élément sélectionné ? (o/n)",
+            Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
 // --- Helpers de style/layout ---
