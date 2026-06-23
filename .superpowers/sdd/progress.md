@@ -46,3 +46,4 @@ Recherche + h minuscule: complete (commit ci-dessus) — / cherche dans chemin/i
 Restauration corbeille: complete (commit ci-dessus) — c ouvre la corbeille, Enter/r restaure. 77 tests verts.
 Purge corbeille: complete (commit ci-dessus) — d supprime déf., x vide tout, confirm o/n. 81 tests verts.
 Recherche live: complete (commit ci-dessus) — filtre chemin/id à la frappe, Tab=contenu. 82 tests verts.
+Groupes repliables: complete (commit ci-dessus) — Espace replie/déplie un home, z tout. 83 tests verts.
