@@ -181,24 +181,17 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
-    // Recherche de session.
+    // Recherche de session (live : filtre chemin/id à la frappe, Tab = contenu).
     if app.search.is_some() {
-        if app.search_in_results() {
-            match key.code {
-                KeyCode::Esc => app.search_cancel(),
-                KeyCode::Enter => app.search_open_selected(),
-                KeyCode::Up => app.search_move(-1),
-                KeyCode::Down => app.search_move(1),
-                _ => {}
-            }
-        } else {
-            match key.code {
-                KeyCode::Esc => app.search_cancel(),
-                KeyCode::Enter => app.search_run(),
-                KeyCode::Backspace => app.search_input_backspace(),
-                KeyCode::Char(c) => app.search_input_char(c),
-                _ => {}
-            }
+        match key.code {
+            KeyCode::Esc => app.search_cancel(),
+            KeyCode::Enter => app.search_open_selected(),
+            KeyCode::Up => app.search_move(-1),
+            KeyCode::Down => app.search_move(1),
+            KeyCode::Tab => app.search_deep(),
+            KeyCode::Backspace => app.search_input_backspace(),
+            KeyCode::Char(c) => app.search_input_char(c),
+            _ => {}
         }
         return;
     }

@@ -89,12 +89,15 @@ pub struct SearchHit {
     pub snippet: String,
 }
 
-/// État de la recherche : saisie d'une requête puis liste de résultats.
+/// État de la recherche : requête éditable + résultats recalculés en direct.
+/// La frappe filtre instantanément sur le **chemin / id** ; `Tab` lance une
+/// recherche **dans le contenu** (lecture des fichiers, plus coûteuse).
 pub struct SearchState {
     pub query: String,
-    pub in_results: bool,
     pub results: Vec<SearchHit>,
     pub idx: usize,
+    /// Vrai si les résultats incluent une recherche de contenu (via `Tab`).
+    pub deep: bool,
 }
 
 /// Une entrée de corbeille affichable (avec son home d'origine pour restaurer).
@@ -862,30 +865,24 @@ impl App {
     pub fn open_search(&mut self) {
         self.search = Some(SearchState {
             query: String::new(),
-            in_results: false,
             results: Vec::new(),
             idx: 0,
+            deep: false,
         });
-    }
-
-    pub fn search_in_results(&self) -> bool {
-        self.search.as_ref().map(|s| s.in_results).unwrap_or(false)
     }
 
     pub fn search_input_char(&mut self, c: char) {
         if let Some(s) = &mut self.search {
-            if !s.in_results {
-                s.query.push(c);
-            }
+            s.query.push(c);
         }
+        self.search_recompute();
     }
 
     pub fn search_input_backspace(&mut self) {
         if let Some(s) = &mut self.search {
-            if !s.in_results {
-                s.query.pop();
-            }
+            s.query.pop();
         }
+        self.search_recompute();
     }
 
     pub fn search_cancel(&mut self) {
@@ -894,31 +891,31 @@ impl App {
 
     pub fn search_move(&mut self, delta: i32) {
         if let Some(s) = &mut self.search {
-            if s.in_results {
+            if !s.results.is_empty() {
                 s.idx = step(s.idx, delta, s.results.len());
             }
         }
     }
 
-    /// Exécute la recherche sur les sessions chargées (chemin, id, contenu).
-    pub fn search_run(&mut self) {
-        let query = match &self.search {
-            Some(s) => s.query.trim().to_lowercase(),
-            None => return,
-        };
-        if query.is_empty() {
-            return;
-        }
+    /// Collecte les sessions correspondant à `query` (déjà en minuscules).
+    /// `deep` active la lecture du contenu ; sinon on filtre chemin + id.
+    fn collect_hits(&self, query: &str, deep: bool) -> Vec<SearchHit> {
         let mut results = Vec::new();
         for (pi, p) in self.projects.iter().enumerate() {
             let proj_label = humanize_path(p.cwd.as_deref().unwrap_or(&p.encoded_name));
             let proj_lc = proj_label.to_lowercase();
             for (si, sess) in p.sessions.iter().enumerate() {
-                let meta_hit = proj_lc.contains(&query) || sess.id.to_lowercase().contains(&query);
-                let snippet = match find_in_session(&sess.path, &query) {
-                    Some(snip) => snip,
-                    None if meta_hit => "(correspond au chemin / id)".to_string(),
-                    None => continue,
+                let meta_hit = proj_lc.contains(query) || sess.id.to_lowercase().contains(query);
+                let snippet = if deep {
+                    match find_in_session(&sess.path, query) {
+                        Some(snip) => snip,
+                        None if meta_hit => "(chemin / id)".to_string(),
+                        None => continue,
+                    }
+                } else if meta_hit {
+                    "(chemin / id)".to_string()
+                } else {
+                    continue;
                 };
                 let id8: String = sess.id.chars().take(8).collect();
                 results.push(SearchHit {
@@ -929,13 +926,46 @@ impl App {
                 });
             }
         }
+        results
+    }
+
+    /// Filtre en direct (chemin + id) à chaque frappe ; instantané même avec
+    /// des centaines de sessions car aucun fichier n'est lu.
+    pub fn search_recompute(&mut self) {
+        let query = match &self.search {
+            Some(s) => s.query.trim().to_lowercase(),
+            None => return,
+        };
+        let results = if query.is_empty() {
+            Vec::new()
+        } else {
+            self.collect_hits(&query, false)
+        };
+        if let Some(s) = &mut self.search {
+            s.results = results;
+            s.idx = 0;
+            s.deep = false;
+        }
+    }
+
+    /// Recherche **dans le contenu** des sessions (lecture des fichiers) pour la
+    /// requête courante ; déclenchée par `Tab` car plus coûteuse.
+    pub fn search_deep(&mut self) {
+        let query = match &self.search {
+            Some(s) => s.query.trim().to_lowercase(),
+            None => return,
+        };
+        if query.is_empty() {
+            return;
+        }
+        let results = self.collect_hits(&query, true);
         let n = results.len();
         if let Some(s) = &mut self.search {
             s.results = results;
             s.idx = 0;
-            s.in_results = true;
+            s.deep = true;
         }
-        self.status = Some(format!("{n} session(s) trouvée(s) pour « {query} »"));
+        self.status = Some(format!("{n} session(s) (contenu) pour « {query} »"));
     }
 
     /// Ouvre le transcript de la session du résultat sélectionné.
@@ -1716,6 +1746,34 @@ mod tests {
     }
 
     #[test]
+    fn search_live_filters_by_path_without_reading_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdir = dir.path().join("projects").join("-home-x-alpha");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(
+            pdir.join("aaaa.jsonl"),
+            r#"{"type":"user","cwd":"/home/x/alpha","message":{"content":"zzz"}}"#,
+        )
+        .unwrap();
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+
+        app.open_search();
+        for c in "alpha".chars() {
+            app.search_input_char(c);
+        }
+        // Filtrage live par chemin, sans recherche profonde.
+        assert!(!app.search.as_ref().unwrap().deep);
+        assert_eq!(app.search.as_ref().unwrap().results.len(), 1);
+
+        // Effacer la requête vide les résultats.
+        for _ in 0..5 {
+            app.search_input_backspace();
+        }
+        assert!(app.search.as_ref().unwrap().results.is_empty());
+    }
+
+    #[test]
     fn search_finds_and_opens_session() {
         let dir = tempfile::tempdir().unwrap();
         let pdir = dir.path().join("projects").join("-home-x");
@@ -1732,8 +1790,10 @@ mod tests {
         for c in "widget".chars() {
             app.search_input_char(c);
         }
-        app.search_run();
-        assert!(app.search_in_results());
+        // Le contenu n'est trouvé qu'avec la recherche profonde (Tab).
+        assert!(app.search.as_ref().unwrap().results.is_empty(), "live = chemin/id seulement");
+        app.search_deep();
+        assert!(app.search.as_ref().unwrap().deep);
         assert_eq!(app.search.as_ref().unwrap().results.len(), 1);
 
         app.search_open_selected();

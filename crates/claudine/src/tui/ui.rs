@@ -564,12 +564,14 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
     }
 
     // Recherche : raccourcis prioritaires.
-    if let Some(s) = &app.search {
-        let hints = if s.in_results {
-            key_hints(&[("↑/↓", "résultat"), ("Enter", "ouvrir"), ("Esc", "fermer")])
-        } else {
-            key_hints(&[("saisir", "requête"), ("Enter", "chercher"), ("Esc", "annuler")])
-        };
+    if app.search.is_some() {
+        let hints = key_hints(&[
+            ("saisir", "filtrer (chemin/id)"),
+            ("Tab", "contenu"),
+            ("↑/↓", "résultat"),
+            ("Enter", "ouvrir"),
+            ("Esc", "fermer"),
+        ]);
         f.render_widget(Paragraph::new(Line::from(hints)), area);
         return;
     }
@@ -704,7 +706,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
-        ("/", "rechercher une session (chemin / id / contenu)"),
+        ("/", "rechercher (live chemin/id · Tab = contenu)"),
         ("d / Suppr", "session → corbeille (récupérable)"),
         ("m", "déplacer la session vers un autre projet"),
         ("c", "corbeille : restaurer / supprimer déf. / vider"),
@@ -926,14 +928,7 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
             " Rechercher une session ",
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ))
-        .title(
-            Line::from(if s.in_results {
-                " ↑/↓ · Enter ouvrir · Esc fermer "
-            } else {
-                " Entrée chercher · Esc annuler "
-            })
-            .right_aligned(),
-        );
+        .title(Line::from(" Tab contenu · Enter ouvrir · Esc fermer ").right_aligned());
     let inner = block.inner(popup);
     f.render_widget(block, popup);
 
@@ -942,7 +937,12 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
         .constraints([Constraint::Length(2), Constraint::Min(1)])
         .split(inner);
 
-    let cursor = if s.in_results { "" } else { "▏" };
+    let count = if s.query.trim().is_empty() {
+        String::new()
+    } else {
+        let kind = if s.deep { "contenu" } else { "chemin/id" };
+        format!("   {} résultat(s) · {kind}", s.results.len())
+    };
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
@@ -950,15 +950,16 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ),
             Span::raw(s.query.clone()),
-            Span::styled(cursor, Style::default().fg(ACCENT)),
+            Span::styled("▏", Style::default().fg(ACCENT)),
+            Span::styled(count, Style::default().fg(DIM)),
         ])),
         rows[0],
     );
 
-    if !s.in_results {
+    if s.query.trim().is_empty() {
         f.render_widget(
             Paragraph::new(Span::styled(
-                "  Tapez votre requête (chemin, id ou contenu), puis Entrée.",
+                "  Tapez pour filtrer par chemin / id (en direct). Tab : chercher dans le contenu.",
                 Style::default().fg(DIM),
             )),
             rows[1],
@@ -967,7 +968,10 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
     }
     if s.results.is_empty() {
         f.render_widget(
-            Paragraph::new(Span::styled("  Aucun résultat.", Style::default().fg(DIM))),
+            Paragraph::new(Span::styled(
+                "  Aucun résultat. Tab pour chercher dans le contenu des sessions.",
+                Style::default().fg(DIM),
+            )),
             rows[1],
         );
         return;
