@@ -70,12 +70,14 @@ qui publie des artefacts pour les plateformes les plus répandues :
 | Plateforme            | Artefact                                          |
 | --------------------- | ------------------------------------------------- |
 | Windows (Microsoft)   | `claudine-windows-x86_64.exe` (+ `.zip`)          |
-| macOS Intel (Apple)   | `claudine-macos-x86_64.tar.gz`                    |
 | macOS Apple Silicon   | `claudine-macos-aarch64.tar.gz`                   |
 | Linux générique       | `claudine-linux-x86_64.tar.gz`                    |
 | Debian / Ubuntu       | `claudine_<version>_amd64.deb`                    |
 | Fedora / RHEL         | `claudine-<version>.x86_64.rpm`                   |
 | Arch Linux            | `claudine-<version>-1-x86_64.pkg.tar.zst`         |
+
+> Les Mac Intel sont couverts par Homebrew, qui compile depuis les sources
+> (pas de binaire Intel pré-compilé).
 
 ```sh
 # Debian / Ubuntu

@@ -9,9 +9,6 @@ name: Release
 on:
   push:
     tags: ["v*"]
-    # TEMPORAIRE : valide la matrice de build sur la branche de dev. À retirer
-    # avant le merge — les jobs release/homebrew/winget restent gated sur tag.
-    branches: ["claude/ci-build-linux-distros-fvjcaw"]
   workflow_dispatch:
 
 permissions:
@@ -22,7 +19,7 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Binaires natifs : Windows, macOS (Intel + Apple Silicon), Linux
+  # Binaires natifs : Windows, macOS (Apple Silicon), Linux
   # ---------------------------------------------------------------------------
   binaries:
     name: Binaire ${{ matrix.name }}
@@ -37,9 +34,6 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows-x86_64
-          - os: macos-13
-            target: x86_64-apple-darwin
-            name: macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
             name: macos-aarch64
