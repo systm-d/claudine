@@ -1,0 +1,298 @@
+name: Release
+
+# Build multi-plateforme : Windows (Microsoft), macOS (Apple), Debian/Ubuntu,
+# Arch Linux et Fedora/RHEL — couvre les distributions les plus répandues.
+#
+# Déclenché par un tag `v*` (crée une release GitHub avec tous les artefacts)
+# ou manuellement (build + artefacts uniquement).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Binaires natifs : Windows, macOS (Apple Silicon), Linux
+  # ---------------------------------------------------------------------------
+  binaries:
+    name: Binaire ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: macos-aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: cargo build --release
+        run: cargo build --release --locked --bin claudine --target ${{ matrix.target }}
+
+      - name: Empaqueter (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          staging="claudine-${{ matrix.name }}"
+          mkdir "$staging"
+          cp "target/${{ matrix.target }}/release/claudine" "$staging/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "$staging/"
+          tar czf "$staging.tar.gz" "$staging"
+
+      - name: Empaqueter (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          staging="claudine-${{ matrix.name }}"
+          mkdir "$staging"
+          cp "target/${{ matrix.target }}/release/claudine.exe" "$staging/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "$staging/"
+          7z a "$staging.zip" "$staging"
+          # .exe autonome (sans archive) pour téléchargement direct / winget.
+          cp "target/${{ matrix.target }}/release/claudine.exe" "claudine-${{ matrix.name }}.exe"
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudine-${{ matrix.name }}
+          path: |
+            claudine-${{ matrix.name }}.tar.gz
+            claudine-${{ matrix.name }}.zip
+            claudine-${{ matrix.name }}.exe
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Paquet Debian / Ubuntu (.deb)
+  # ---------------------------------------------------------------------------
+  debian:
+    name: Paquet Debian (.deb)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Installer cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Construire le .deb
+        run: cargo deb -p claudine
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudine-deb
+          path: target/debian/*.deb
+
+  # ---------------------------------------------------------------------------
+  # Paquet Fedora / RHEL (.rpm)
+  # ---------------------------------------------------------------------------
+  fedora:
+    name: Paquet Fedora (.rpm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Construire le binaire
+        run: cargo build --release --locked --bin claudine
+
+      - name: Installer cargo-generate-rpm
+        run: cargo install cargo-generate-rpm --locked
+
+      - name: Construire le .rpm
+        run: cargo generate-rpm -p crates/claudine
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudine-rpm
+          path: target/generate-rpm/*.rpm
+
+  # ---------------------------------------------------------------------------
+  # Paquet Arch Linux (.pkg.tar.zst)
+  # ---------------------------------------------------------------------------
+  arch:
+    name: Paquet Arch (.pkg.tar.zst)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Installer les dépendances
+        # nodejs est requis par les actions JS (checkout, upload-artifact) dans
+        # un conteneur sans Node ; base-devel + rustup pour makepkg/cargo.
+        run: pacman -Syu --noconfirm base-devel rustup git nodejs
+      - name: Initialiser la toolchain Rust
+        run: rustup default stable
+
+      - uses: actions/checkout@v4
+
+      - name: Préparer l'arborescence de build
+        shell: bash
+        run: |
+          ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "PKGVER=$ver" >> "$GITHUB_ENV"
+          # makepkg refuse de tourner en root : on crée un utilisateur dédié.
+          useradd -m builder
+          # Archive source locale attendue par le PKGBUILD.
+          git config --global --add safe.directory "$PWD"
+          git archive --format=tar.gz --prefix="claudine-$ver/" -o "packaging/arch/claudine-$ver.tar.gz" HEAD
+          # sed la version dans le PKGBUILD au cas où le tag diffère.
+          sed -i "s/^pkgver=.*/pkgver=$ver/" packaging/arch/PKGBUILD
+          cp -r packaging/arch /tmp/build
+          chown -R builder:builder /tmp/build
+
+      - name: makepkg
+        run: |
+          cd /tmp/build
+          sudo -u builder makepkg -f --noconfirm
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudine-arch
+          path: /tmp/build/*.pkg.tar.zst
+
+  # ---------------------------------------------------------------------------
+  # Release GitHub (uniquement sur tag) : agrège tous les artefacts
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publier la release
+    needs: [binaries, debian, fedora, arch]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Télécharger les artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publier la release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+
+  # ---------------------------------------------------------------------------
+  # Homebrew (macOS) : met à jour Formula/claudine.rb sur la branche par défaut.
+  # Installation côté utilisateur :
+  #   brew tap systm-d/claudine https://github.com/systm-d/claudine
+  #   brew install claudine
+  # ---------------------------------------------------------------------------
+  homebrew:
+    name: Mettre à jour la formule Homebrew
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Mettre à jour la formule
+        env:
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ ! -f Formula/claudine.rb ]; then
+            echo "Formula/claudine.rb absente sur main (branche pas encore mergée) — étape ignorée."
+            exit 0
+          fi
+          version="${TAG#v}"
+          url="https://github.com/${GH_REPO}/archive/refs/tags/${TAG}.tar.gz"
+          sha=$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)
+          sed -i -E "s|^  url \".*\"|  url \"${url}\"|" Formula/claudine.rb
+          sed -i -E "s|^  sha256 \".*\"|  sha256 \"${sha}\"|" Formula/claudine.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/claudine.rb
+          git commit -m "homebrew: claudine ${version}" || { echo "Formule déjà à jour"; exit 0; }
+          git push
+
+  # ---------------------------------------------------------------------------
+  # winget (Windows) : génère les manifestes pointant sur le .exe autonome.
+  # Les manifestes sont joints à la release ; la soumission à microsoft/winget-pkgs
+  # se fait ensuite (voir packaging/winget/README.md).
+  # ---------------------------------------------------------------------------
+  winget:
+    name: Générer les manifestes winget
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Générer les manifestes
+        env:
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          url="https://github.com/${GH_REPO}/releases/download/${TAG}/claudine-windows-x86_64.exe"
+          sha=$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1 | tr 'a-f' 'A-F')
+          out="manifests/systm-d.claudine/${version}"
+          mkdir -p "$out"
+          cat > "$out/systm-d.claudine.yaml" <<EOF
+          PackageIdentifier: systm-d.claudine
+          PackageVersion: ${version}
+          DefaultLocale: en-US
+          ManifestType: version
+          ManifestVersion: 1.6.0
+          EOF
+          cat > "$out/systm-d.claudine.installer.yaml" <<EOF
+          PackageIdentifier: systm-d.claudine
+          PackageVersion: ${version}
+          InstallerType: portable
+          Commands:
+            - claudine
+          Installers:
+            - Architecture: x64
+              InstallerUrl: ${url}
+              InstallerSha256: ${sha}
+          ManifestType: installer
+          ManifestVersion: 1.6.0
+          EOF
+          cat > "$out/systm-d.claudine.locale.en-US.yaml" <<EOF
+          PackageIdentifier: systm-d.claudine
+          PackageVersion: ${version}
+          PackageLocale: en-US
+          Publisher: systm-d
+          PackageName: claudine
+          License: MIT OR Apache-2.0
+          ShortDescription: Outil Rust TUI/CLI pour naviguer et gérer les données locales de Claude Code
+          PackageUrl: https://github.com/${GH_REPO}
+          ManifestType: defaultLocale
+          ManifestVersion: 1.6.0
+          EOF
+          tar czf winget-manifests.tar.gz -C manifests .
+
+      - name: Joindre les manifestes à la release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: winget-manifests.tar.gz

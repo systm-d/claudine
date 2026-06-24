@@ -3,10 +3,46 @@ name = "claudine"
 edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "../../README.md"
 
 [[bin]]
 name = "claudine"
 path = "src/main.rs"
+
+# --- Packaging Debian/Ubuntu (cargo-deb) -----------------------------------
+# Les chemins des assets sont relatifs à ce Cargo.toml ; cargo-deb réécrit
+# automatiquement `target/release/...` vers le dossier target du workspace.
+[package.metadata.deb]
+maintainer = "systm-d <k@levilainpetit.dev>"
+copyright = "2026, systm-d"
+license-file = ["../../LICENSE-MIT", "0"]
+extended-description = """\
+Claudine est un outil Rust TUI/CLI pour naviguer et gérer les données locales \
+de Claude Code stockées dans ~/.claude : sessions, mémoire (CLAUDE.md), \
+configuration (settings.json) et extensions (hooks, plugins, serveurs MCP)."""
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/claudine", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/claudine/README.md", "644"],
+]
+
+# --- Packaging Fedora/RHEL (cargo-generate-rpm) ----------------------------
+# cargo-generate-rpm est invoqué depuis la racine du workspace : les chemins
+# `source` sont donc relatifs à cette racine.
+[package.metadata.generate-rpm]
+summary = "Outil Rust TUI/CLI pour gérer les données locales de Claude Code"
+assets = [
+    { source = "target/release/claudine", dest = "/usr/bin/claudine", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/claudine/README.md", mode = "644", doc = true },
+    { source = "LICENSE-MIT", dest = "/usr/share/doc/claudine/LICENSE-MIT", mode = "644", doc = true },
+    { source = "LICENSE-APACHE", dest = "/usr/share/doc/claudine/LICENSE-APACHE", mode = "644", doc = true },
+]
 
 [dependencies]
 claudine-core = { path = "../claudine-core" }

@@ -13,6 +13,7 @@ et extensions (hooks, plugins, serveurs MCP).
 
 [![Licence](https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-blue)](#licence)
 [![CI](https://github.com/systm-d/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/ci.yml)
+[![Release](https://github.com/systm-d/claudine/actions/workflows/release.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/release.yml)
 
 ---
 
@@ -60,6 +61,51 @@ git clone https://github.com/systm-d/claudine
 cd claudine
 cargo install --path crates/claudine
 ```
+
+### Paquets précompilés
+
+Chaque tag `v*` déclenche le workflow [Release](.github/workflows/release.yml)
+qui publie des artefacts pour les plateformes les plus répandues :
+
+| Plateforme            | Artefact                                          |
+| --------------------- | ------------------------------------------------- |
+| Windows (Microsoft)   | `claudine-windows-x86_64.exe` (+ `.zip`)          |
+| macOS Apple Silicon   | `claudine-macos-aarch64.tar.gz`                   |
+| Linux générique       | `claudine-linux-x86_64.tar.gz`                    |
+| Debian / Ubuntu       | `claudine_<version>_amd64.deb`                    |
+| Fedora / RHEL         | `claudine-<version>.x86_64.rpm`                   |
+| Arch Linux            | `claudine-<version>-1-x86_64.pkg.tar.zst`         |
+
+> Les Mac Intel sont couverts par Homebrew, qui compile depuis les sources
+> (pas de binaire Intel pré-compilé).
+
+```sh
+# Debian / Ubuntu
+sudo dpkg -i claudine_*.deb
+# Fedora / RHEL
+sudo rpm -i claudine-*.rpm
+# Arch Linux
+sudo pacman -U claudine-*.pkg.tar.zst
+```
+
+#### Gestionnaires de paquets
+
+**macOS — Homebrew :**
+
+```sh
+brew tap systm-d/claudine https://github.com/systm-d/claudine
+brew install claudine
+```
+
+**Windows — winget** (une fois le paquet publié sur `winget-pkgs`, cf.
+[`packaging/winget`](packaging/winget/README.md)) :
+
+```powershell
+winget install claudine
+```
+
+Sinon, télécharge `claudine-windows-x86_64.exe` depuis la release et place-le
+dans un dossier de ton `PATH`.
 
 ---
 
