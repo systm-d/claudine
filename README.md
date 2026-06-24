@@ -13,6 +13,7 @@ et extensions (hooks, plugins, serveurs MCP).
 
 [![Licence](https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-blue)](#licence)
 [![CI](https://github.com/systm-d/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/ci.yml)
+[![Release](https://github.com/systm-d/claudine/actions/workflows/release.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/release.yml)
 
 ---
 
@@ -59,6 +60,30 @@ Rust ≥ 1.74 requis.
 git clone https://github.com/systm-d/claudine
 cd claudine
 cargo install --path crates/claudine
+```
+
+### Paquets précompilés
+
+Chaque tag `v*` déclenche le workflow [Release](.github/workflows/release.yml)
+qui publie des artefacts pour les plateformes les plus répandues :
+
+| Plateforme            | Artefact                                  |
+| --------------------- | ----------------------------------------- |
+| Windows (Microsoft)   | `claudine-windows-x86_64.zip`             |
+| macOS Intel (Apple)   | `claudine-macos-x86_64.tar.gz`            |
+| macOS Apple Silicon   | `claudine-macos-aarch64.tar.gz`           |
+| Linux générique       | `claudine-linux-x86_64.tar.gz`            |
+| Debian / Ubuntu       | `claudine_<version>_amd64.deb`            |
+| Fedora / RHEL         | `claudine-<version>.x86_64.rpm`           |
+| Arch Linux            | `claudine-<version>-1-x86_64.pkg.tar.zst` |
+
+```sh
+# Debian / Ubuntu
+sudo dpkg -i claudine_*.deb
+# Fedora / RHEL
+sudo rpm -i claudine-*.rpm
+# Arch Linux
+sudo pacman -U claudine-*.pkg.tar.zst
 ```
 
 ---

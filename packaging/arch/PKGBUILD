@@ -1,0 +1,33 @@
+# Maintainer: systm-d <k@levilainpetit.dev>
+pkgname=claudine
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Outil Rust TUI/CLI pour naviguer et gérer les données locales de Claude Code (~/.claude)"
+arch=('x86_64')
+url="https://github.com/systm-d/claudine"
+license=('MIT' 'Apache-2.0')
+makedepends=('cargo')
+# La CI génère une archive locale claudine-$pkgver.tar.gz à côté de ce PKGBUILD.
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --release --locked --bin claudine
+}
+
+check() {
+    cd "$srcdir/$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo test --release --locked --workspace
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    install -Dm755 "target/release/claudine" "$pkgdir/usr/bin/claudine"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+    install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}
