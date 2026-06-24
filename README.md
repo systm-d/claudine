@@ -67,15 +67,15 @@ cargo install --path crates/claudine
 Chaque tag `v*` déclenche le workflow [Release](.github/workflows/release.yml)
 qui publie des artefacts pour les plateformes les plus répandues :
 
-| Plateforme            | Artefact                                  |
-| --------------------- | ----------------------------------------- |
-| Windows (Microsoft)   | `claudine-windows-x86_64.zip`             |
-| macOS Intel (Apple)   | `claudine-macos-x86_64.tar.gz`            |
-| macOS Apple Silicon   | `claudine-macos-aarch64.tar.gz`           |
-| Linux générique       | `claudine-linux-x86_64.tar.gz`            |
-| Debian / Ubuntu       | `claudine_<version>_amd64.deb`            |
-| Fedora / RHEL         | `claudine-<version>.x86_64.rpm`           |
-| Arch Linux            | `claudine-<version>-1-x86_64.pkg.tar.zst` |
+| Plateforme            | Artefact                                          |
+| --------------------- | ------------------------------------------------- |
+| Windows (Microsoft)   | `claudine-windows-x86_64.exe` (+ `.zip`)          |
+| macOS Intel (Apple)   | `claudine-macos-x86_64.tar.gz`                    |
+| macOS Apple Silicon   | `claudine-macos-aarch64.tar.gz`                   |
+| Linux générique       | `claudine-linux-x86_64.tar.gz`                    |
+| Debian / Ubuntu       | `claudine_<version>_amd64.deb`                    |
+| Fedora / RHEL         | `claudine-<version>.x86_64.rpm`                   |
+| Arch Linux            | `claudine-<version>-1-x86_64.pkg.tar.zst`         |
 
 ```sh
 # Debian / Ubuntu
@@ -85,6 +85,25 @@ sudo rpm -i claudine-*.rpm
 # Arch Linux
 sudo pacman -U claudine-*.pkg.tar.zst
 ```
+
+#### Gestionnaires de paquets
+
+**macOS — Homebrew :**
+
+```sh
+brew tap systm-d/claudine https://github.com/systm-d/claudine
+brew install claudine
+```
+
+**Windows — winget** (une fois le paquet publié sur `winget-pkgs`, cf.
+[`packaging/winget`](packaging/winget/README.md)) :
+
+```powershell
+winget install claudine
+```
+
+Sinon, télécharge `claudine-windows-x86_64.exe` depuis la release et place-le
+dans un dossier de ton `PATH`.
 
 ---
 

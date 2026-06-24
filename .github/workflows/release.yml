@@ -74,6 +74,8 @@ jobs:
           cp "target/${{ matrix.target }}/release/claudine.exe" "$staging/"
           cp README.md LICENSE-MIT LICENSE-APACHE "$staging/"
           7z a "$staging.zip" "$staging"
+          # .exe autonome (sans archive) pour téléchargement direct / winget.
+          cp "target/${{ matrix.target }}/release/claudine.exe" "claudine-${{ matrix.name }}.exe"
 
       - name: Upload artefact
         uses: actions/upload-artifact@v4
@@ -82,6 +84,7 @@ jobs:
           path: |
             claudine-${{ matrix.name }}.tar.gz
             claudine-${{ matrix.name }}.zip
+            claudine-${{ matrix.name }}.exe
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
@@ -195,3 +198,100 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
+
+  # ---------------------------------------------------------------------------
+  # Homebrew (macOS) : met à jour Formula/claudine.rb sur la branche par défaut.
+  # Installation côté utilisateur :
+  #   brew tap systm-d/claudine https://github.com/systm-d/claudine
+  #   brew install claudine
+  # ---------------------------------------------------------------------------
+  homebrew:
+    name: Mettre à jour la formule Homebrew
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Mettre à jour la formule
+        env:
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          url="https://github.com/${GH_REPO}/archive/refs/tags/${TAG}.tar.gz"
+          sha=$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)
+          sed -i -E "s|^  url \".*\"|  url \"${url}\"|" Formula/claudine.rb
+          sed -i -E "s|^  sha256 \".*\"|  sha256 \"${sha}\"|" Formula/claudine.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/claudine.rb
+          git commit -m "homebrew: claudine ${version}" || { echo "Formule déjà à jour"; exit 0; }
+          git push
+
+  # ---------------------------------------------------------------------------
+  # winget (Windows) : génère les manifestes pointant sur le .exe autonome.
+  # Les manifestes sont joints à la release ; la soumission à microsoft/winget-pkgs
+  # se fait ensuite (voir packaging/winget/README.md).
+  # ---------------------------------------------------------------------------
+  winget:
+    name: Générer les manifestes winget
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Générer les manifestes
+        env:
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          url="https://github.com/${GH_REPO}/releases/download/${TAG}/claudine-windows-x86_64.exe"
+          sha=$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1 | tr 'a-f' 'A-F')
+          out="manifests/systm-d.claudine/${version}"
+          mkdir -p "$out"
+          cat > "$out/systm-d.claudine.yaml" <<EOF
+          PackageIdentifier: systm-d.claudine
+          PackageVersion: ${version}
+          DefaultLocale: en-US
+          ManifestType: version
+          ManifestVersion: 1.6.0
+          EOF
+          cat > "$out/systm-d.claudine.installer.yaml" <<EOF
+          PackageIdentifier: systm-d.claudine
+          PackageVersion: ${version}
+          InstallerType: portable
+          Commands:
+            - claudine
+          Installers:
+            - Architecture: x64
+              InstallerUrl: ${url}
+              InstallerSha256: ${sha}
+          ManifestType: installer
+          ManifestVersion: 1.6.0
+          EOF
+          cat > "$out/systm-d.claudine.locale.en-US.yaml" <<EOF
+          PackageIdentifier: systm-d.claudine
+          PackageVersion: ${version}
+          PackageLocale: en-US
+          Publisher: systm-d
+          PackageName: claudine
+          License: MIT OR Apache-2.0
+          ShortDescription: Outil Rust TUI/CLI pour naviguer et gérer les données locales de Claude Code
+          PackageUrl: https://github.com/${GH_REPO}
+          ManifestType: defaultLocale
+          ManifestVersion: 1.6.0
+          EOF
+          tar czf winget-manifests.tar.gz -C manifests .
+
+      - name: Joindre les manifestes à la release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: winget-manifests.tar.gz

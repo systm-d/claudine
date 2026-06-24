@@ -1,0 +1,26 @@
+# Formule Homebrew pour claudine.
+#
+# Installation :
+#   brew tap systm-d/claudine https://github.com/systm-d/claudine
+#   brew install claudine
+#
+# Les champs `url` et `sha256` sont mis à jour automatiquement par la CI
+# (job `homebrew` du workflow Release) à chaque tag `v*`.
+class Claudine < Formula
+  desc "Outil Rust TUI/CLI pour naviguer et gérer les données locales de Claude Code"
+  homepage "https://github.com/systm-d/claudine"
+  url "https://github.com/systm-d/claudine/archive/refs/tags/v0.1.0.tar.gz"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  license any_of: ["MIT", "Apache-2.0"]
+  head "https://github.com/systm-d/claudine.git", branch: "main"
+
+  depends_on "rust" => :build
+
+  def install
+    system "cargo", "install", *std_cargo_args(path: "crates/claudine")
+  end
+
+  test do
+    assert_match "claudine", shell_output("#{bin}/claudine --help")
+  end
+end
