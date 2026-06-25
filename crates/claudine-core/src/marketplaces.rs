@@ -295,10 +295,23 @@ mod git {
         Err(CoreError::Marketplace(format!("{what} a échoué : {msg}")))
     }
 
-    /// `git clone --depth 1 <url> <dest>`.
+    /// `git clone --depth 1 -- <url> <dest>`, durci contre l'injection d'argument.
     pub fn clone(url: &str, dest: &Path) -> Result<()> {
+        // Refuse une URL ressemblant à une option (flag smuggling).
+        if url.starts_with('-') {
+            return Err(CoreError::Marketplace(format!("url invalide : {url}")));
+        }
         let mut c = Command::new("git");
-        c.arg("clone").arg("--depth").arg("1").arg(url).arg(dest);
+        // `protocol.ext.allow=never` neutralise le transport `ext::` (exec arbitraire) ;
+        // `--` sépare les options des positionnels.
+        c.arg("-c")
+            .arg("protocol.ext.allow=never")
+            .arg("clone")
+            .arg("--depth")
+            .arg("1")
+            .arg("--")
+            .arg(url)
+            .arg(dest);
         c.env("GIT_TERMINAL_PROMPT", "0");
         finish(c, "git clone")
     }
@@ -322,7 +335,10 @@ pub fn add_marketplace(home: &ClaudeHome, source: MarketplaceSource) -> Result<M
     if tmp.exists() {
         let _ = std::fs::remove_dir_all(&tmp);
     }
-    git::clone(&source.clone_url(), &tmp)?;
+    if let Err(e) = git::clone(&source.clone_url(), &tmp) {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(e);
+    }
 
     let manifest = match read_manifest_at(&tmp) {
         Ok(m) => m,
@@ -623,5 +639,22 @@ mod tests {
             .join("upd")
             .join("NEW.txt")
             .exists());
+    }
+
+    #[test]
+    fn add_marketplace_rejects_dash_url() {
+        let (_d, home) = home();
+        let src = MarketplaceSource::Git { url: "--upload-pack=evil".into() };
+        assert!(add_marketplace(&home, src).is_err());
+        assert!(read_marketplaces(&home).unwrap().is_empty());
+    }
+
+    #[test]
+    fn add_marketplace_blocks_ext_transport() {
+        // `protocol.ext.allow=never` doit faire échouer le transport ext:: (sinon RCE).
+        let (_d, home) = home();
+        let src = MarketplaceSource::Git { url: "ext::sh -c true".into() };
+        assert!(add_marketplace(&home, src).is_err());
+        assert!(read_marketplaces(&home).unwrap().is_empty());
     }
 }
