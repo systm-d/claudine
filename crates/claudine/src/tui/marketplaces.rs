@@ -10,6 +10,7 @@ pub enum MktMode {
     AddInput,
 }
 
+#[derive(Debug)]
 pub struct MarketplacesManager {
     pub items: Vec<Marketplace>,
     pub idx: usize,

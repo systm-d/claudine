@@ -417,15 +417,16 @@ pub fn update_marketplace(home: &ClaudeHome, name: &str) -> Result<()> {
             "marketplace « {name} » absente"
         )));
     }
-    git::pull(&dir)?;
-
     let path = known_marketplaces_path(home);
     let mut doc = SettingsDoc::load(&path)?;
-    if doc.get(&[name]).is_some() {
-        doc.set(&[name, "lastUpdated"], Value::String(iso8601_utc(SystemTime::now())));
-        doc.save(&path)?;
+    if doc.get(&[name]).is_none() {
+        return Err(CoreError::Marketplace(format!(
+            "entrée de registre absente pour « {name} »"
+        )));
     }
-    Ok(())
+    git::pull(&dir)?;
+    doc.set(&[name, "lastUpdated"], Value::String(iso8601_utc(SystemTime::now())));
+    doc.save(&path)
 }
 
 #[cfg(test)]
@@ -656,5 +657,14 @@ mod tests {
         let src = MarketplaceSource::Git { url: "ext::sh -c true".into() };
         assert!(add_marketplace(&home, src).is_err());
         assert!(read_marketplaces(&home).unwrap().is_empty());
+    }
+
+    #[test]
+    fn update_marketplace_errors_when_unregistered() {
+        let (_d, home) = home();
+        // Un dossier existe mais aucune entrée de registre (désync).
+        let dir = home.plugins_dir().join("marketplaces").join("orphan");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(update_marketplace(&home, "orphan").is_err());
     }
 }
