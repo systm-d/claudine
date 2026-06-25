@@ -139,11 +139,26 @@ pub struct MarketplaceManifest {
     pub plugins: Vec<PluginManifestEntry>,
 }
 
-/// Entrée plugin du manifeste (minimal pour 2c-1 ; étendu en 2c-2).
+/// Source d'installation d'un plugin (champ `source` du manifeste).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginSource {
+    /// Chaîne `"./plugins/X"` : sous-dossier de la marketplace clonée (pas de réseau).
+    RelativePath { path: String },
+    /// `url` / `git-subdir` / `github` : clone git épinglé à un commit, sous-dossier optionnel.
+    Git {
+        url: String,
+        commit: String,
+        subdir: Option<String>,
+    },
+}
+
+/// Entrée plugin du manifeste.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginManifestEntry {
     pub name: String,
     pub description: Option<String>,
+    /// `None` si la forme de `source` n'est pas reconnue (plugin non installable).
+    pub source: Option<PluginSource>,
 }
 
 fn marketplaces_dir(home: &ClaudeHome) -> PathBuf {
@@ -203,6 +218,32 @@ fn manifest_path(dir: &Path) -> PathBuf {
     dir.join(".claude-plugin").join("marketplace.json")
 }
 
+/// Analyse la valeur du champ `source` d'un plugin (chaîne relative ou objet typé).
+fn parse_plugin_source(v: &Value) -> Option<PluginSource> {
+    if let Some(s) = v.as_str() {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        return Some(PluginSource::RelativePath { path: s.to_string() });
+    }
+    let o = v.as_object()?;
+    match o.get("source").and_then(|s| s.as_str())? {
+        // `url` et `git-subdir` partagent la même mécanique : clone + checkout `sha`.
+        "url" | "git-subdir" => Some(PluginSource::Git {
+            url: o.get("url")?.as_str()?.to_string(),
+            commit: o.get("sha")?.as_str()?.to_string(),
+            subdir: o.get("path").and_then(|p| p.as_str()).map(String::from),
+        }),
+        "github" => Some(PluginSource::Git {
+            url: format!("https://github.com/{}.git", o.get("repo")?.as_str()?),
+            commit: o.get("commit")?.as_str()?.to_string(),
+            subdir: None,
+        }),
+        _ => None,
+    }
+}
+
 fn parse_manifest(v: &Value) -> Option<MarketplaceManifest> {
     let o = v.as_object()?;
     let name = o.get("name")?.as_str()?.to_string();
@@ -218,6 +259,7 @@ fn parse_manifest(v: &Value) -> Option<MarketplaceManifest> {
             Some(PluginManifestEntry {
                 name: po.get("name")?.as_str()?.to_string(),
                 description: po.get("description").and_then(|d| d.as_str()).map(String::from),
+                source: po.get("source").and_then(parse_plugin_source),
             })
         })
         .collect();
@@ -666,5 +708,46 @@ mod tests {
         let dir = home.plugins_dir().join("marketplaces").join("orphan");
         std::fs::create_dir_all(&dir).unwrap();
         assert!(update_marketplace(&home, "orphan").is_err());
+    }
+
+    #[test]
+    fn parse_manifest_extracts_plugin_sources() {
+        let json = serde_json::json!({
+            "name": "mkt",
+            "plugins": [
+                {"name":"rel","description":"d","source":"./plugins/rel"},
+                {"name":"u","source":{"source":"url","url":"https://x/r.git","sha":"abc","path":"sub"}},
+                {"name":"u2","source":{"source":"url","url":"https://x/r.git","sha":"def"}},
+                {"name":"gs","source":{"source":"git-subdir","url":"https://x/g.git","path":"p","ref":"v1","sha":"123"}},
+                {"name":"gh","source":{"source":"github","repo":"o/n","commit":"deadbeef","sha":"z"}},
+                {"name":"weird","source":{"source":"mystery"}}
+            ]
+        });
+        let m = super::parse_manifest(&json).unwrap();
+        let by = |n: &str| m.plugins.iter().find(|p| p.name == n).unwrap();
+        assert_eq!(
+            by("rel").source,
+            Some(PluginSource::RelativePath { path: "./plugins/rel".into() })
+        );
+        assert_eq!(
+            by("u").source,
+            Some(PluginSource::Git { url: "https://x/r.git".into(), commit: "abc".into(), subdir: Some("sub".into()) })
+        );
+        assert_eq!(
+            by("u2").source,
+            Some(PluginSource::Git { url: "https://x/r.git".into(), commit: "def".into(), subdir: None })
+        );
+        assert_eq!(
+            by("gs").source,
+            Some(PluginSource::Git { url: "https://x/g.git".into(), commit: "123".into(), subdir: Some("p".into()) })
+        );
+        assert_eq!(
+            by("gh").source,
+            Some(PluginSource::Git { url: "https://github.com/o/n.git".into(), commit: "deadbeef".into(), subdir: None })
+        );
+        // Source inconnue : entrée conservée (nom/description) mais source None.
+        assert_eq!(by("weird").source, None);
+        // Toutes les entrées restent listées (catalogue non régressé).
+        assert_eq!(m.plugins.len(), 6);
     }
 }

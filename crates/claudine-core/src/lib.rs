@@ -38,7 +38,7 @@ pub use extensions::{
 pub use marketplaces::{
     add_marketplace, iso8601_utc, read_marketplace_manifest, read_marketplaces,
     remove_marketplace, update_marketplace, Marketplace, MarketplaceManifest,
-    MarketplaceSource, PluginManifestEntry,
+    MarketplaceSource, PluginManifestEntry, PluginSource,
 };
 
 #[cfg(test)]

@@ -212,7 +212,7 @@ mod tests {
     use claudine_core::{PluginEntry, PluginManifestEntry};
 
     fn pm(name: &str, desc: Option<&str>) -> PluginManifestEntry {
-        PluginManifestEntry { name: name.into(), description: desc.map(|s| s.to_string()) }
+        PluginManifestEntry { name: name.into(), description: desc.map(|s| s.to_string()), source: None }
     }
 
     #[test]
