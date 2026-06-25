@@ -114,15 +114,27 @@ Base branche: f9aa322 (spec + plan commités)
 
 ## Tâches 2c-2a
 - Task 1: cœur — read_installed_plugins (exposé) + uninstall_plugin — complete
-- Task 2: TUI — état PluginCatalog (2e niveau) — pending
-- Task 3: TUI — câblage catalogue (app + routage) — pending
-- Task 4: TUI — rendu catalogue + aide + vérif finale — pending
+- Task 2: TUI — état PluginCatalog (2e niveau) — complete
+- Task 3: TUI — câblage catalogue (app + routage) — complete
+- Task 4: TUI — rendu catalogue + aide + vérif finale — complete
 
 ## Findings (Minor) 2c-2a à revoir au review final
-- T2: `allow(dead_code)` ajoutés sur PluginCatalog/CatalogEntry/catalog (câblage Tasks 3-4). À RETIRER quand Task 3 (méthodes/field) et Task 4 (champs via rendu) consomment — vérifier clippy 0 warning sans eux au review final.
+- T2: `allow(dead_code)` ajoutés sur PluginCatalog/CatalogEntry/catalog (câblage Tasks 3-4). Stratégie : les laisser jusqu'à Task 4 (qui consomme `description` via le rendu), puis Task 4 retire les 4 et vérifie clippy 0 warning. (Un allow sur du code utilisé est inoffensif, pas de warning.)
+- T2 (Minor): un `use claudine_core::{...}` placé après les helpers dans `mod tests` (hygiène) — cosmétique.
+- T3 (Minor, info): `catalog_close` sans doc-comment ; write-back toggle par `find(name)` (sûr) ; reset confirm_uninstall inline (asymétrie de style). Cosmétiques.
 
 ## Sécurité 2c-2a (à corriger dans la vague de fix Task 1)
 - [MEDIUM] Path traversal dans `uninstall_plugin` : `path.starts_with(cache_root)` est lexical → un `installPath` avec `..` (ex. `<cache>/../../x`) passe le garde-fou puis serait supprimé hors cache. Fix : rejeter tout composant `..` (lexical) + canonicaliser les deux chemins avant comparaison (neutralise symlinks). Pertinent car 2c-2b écrira `installPath`.
 
 ## Completed 2c-2a
 Task 1: complete (commits b74d6dd impl + e118813 fix sécurité, review+re-review clean — Approved) — read_installed_plugins (wrapper sur read_plugins) + uninstall_plugin (cache confiné). MEDIUM path traversal neutralisé (rejet `..` lexical + canonicalisation symlinks). 5 tests uninstall, 83/83 crate, 0 clippy.
+Task 2: complete (commits b1ecb9d impl + ce1e223 fix dead_code, review clean — Approved) — état PluginCatalog/CatalogEntry + champ catalog. Clé `<nom>@<mkt>` vérifiée. allow(dead_code) bornés (retrait en Task 4). 3 tests, 61 -p claudine, 0 clippy. 1 Minor (use placement).
+Task 3: complete (commit 8b02502, review clean — Approved) — câblage catalogue (open_catalog/toggle_enable/uninstall_confirmed/close) + handle_marketplaces_key (Enter ouvre, niveau catalogue). Borrow discipline OK. 2 tests, 0 clippy. 3 Minor cosmétiques.
+Task 4: complete (commit 1c6496d, review clean — Approved) — rendu render_plugin_catalog (états + confirm) + aide + retrait des 4 allow(dead_code). Workspace 148 tests verts, 0 clippy. PHASE 2c-2a 4/4.
+Revue finale (opus, e624e98..1c6496d) : « Ready to merge: Yes », 0 Critical/Important. Reuse sans duplication, clé cohérente, suppression cache durcie (..+canonicalisation) vérifiée. Findings Minor/cosmétiques uniquement → merge non bloqué.
+
+## Backlog 2c-2b (issu du review final 2c-2a)
+- M1: dans `uninstall_plugin`, supprimer le dossier cache APRÈS les écritures registre (rendre le registre autoritaire) — réduit la fenêtre d'entrée pendante si save échoue. Reviewer: « acceptable tel quel », à faire en 2c-2b (qui écrira installPath).
+- Cosmétiques 2c-2a non bloquants: `use` dans mod tests (marketplaces.rs) ; doc-comment `catalog_close`.
+
+PHASE 2c-2a TERMINÉE, prête pour merge.
