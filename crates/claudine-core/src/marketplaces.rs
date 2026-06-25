@@ -549,7 +549,16 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
                     dir.display()
                 )));
             }
-            (dir, None)
+            // I1 : la source pourrait être un lien symbolique pointant hors de la marketplace.
+            // On canonicalise les deux chemins pour comparer les cibles réelles.
+            let canon_mkt = std::fs::canonicalize(&mkt_dir).map_err(|e| CoreError::io(&mkt_dir, e))?;
+            let canon_dir = std::fs::canonicalize(&dir).map_err(|e| CoreError::io(&dir, e))?;
+            if !canon_dir.starts_with(&canon_mkt) {
+                return Err(CoreError::Marketplace(
+                    "dossier de plugin hors marketplace".to_string(),
+                ));
+            }
+            (canon_dir, None)
         }
         PluginSource::Git { url, commit, subdir } => {
             std::fs::create_dir_all(&cache_root).map_err(|e| CoreError::io(&cache_root, e))?;
@@ -584,17 +593,47 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
                     "sous-dossier de plugin introuvable".to_string(),
                 ));
             }
-            (src, Some(temp))
+            // I1 : canonicaliser pour rejeter un éventuel symlink hors du clone temporaire.
+            let canon_temp = match std::fs::canonicalize(&temp) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = std::fs::remove_dir_all(&temp);
+                    return Err(CoreError::io(&temp, e));
+                }
+            };
+            let canon_src = match std::fs::canonicalize(&src) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = std::fs::remove_dir_all(&temp);
+                    return Err(CoreError::io(&src, e));
+                }
+            };
+            if !canon_src.starts_with(&canon_temp) {
+                let _ = std::fs::remove_dir_all(&temp);
+                return Err(CoreError::Marketplace(
+                    "sous-dossier de plugin hors clone".to_string(),
+                ));
+            }
+            (canon_src, Some(temp))
         }
     };
 
     // 3. Version (depuis plugin.json), sinon "unknown".
-    let version = read_plugin_version(&src).unwrap_or_else(|| "unknown".to_string());
+    // La version est non-fiable (issue d'un plugin.json tiers) ; elle ne doit pas
+    // composer un chemin d'échappement. On la remplace par "unknown" si elle n'est
+    // pas un nom sûr (pas de séparateur de chemin ni de `..`).
+    let version = {
+        let v = read_plugin_version(&src).unwrap_or_else(|| "unknown".to_string());
+        if is_safe_name(&v) { v } else { "unknown".to_string() }
+    };
 
     // 4. Copier vers cache/<mkt>/<plugin>/<version>/ (confiné, idempotent).
     let copy_result = (|| -> Result<PathBuf> {
         let dest = cache_root.join(marketplace).join(plugin).join(&version);
-        if !dest.starts_with(&cache_root) {
+        // Garde lexicale ET composants : rejette tout `..` dans le chemin construit.
+        if !dest.starts_with(&cache_root)
+            || dest.components().any(|c| c == std::path::Component::ParentDir)
+        {
             return Err(CoreError::Marketplace("destination hors cache".to_string()));
         }
         if dest.exists() {
@@ -1108,6 +1147,77 @@ mod tests {
             let temp_left = std::fs::read_dir(&cache).unwrap().flatten().count();
             assert_eq!(temp_left, 0, "ni temp ni cache résiduel");
         }
+    }
+
+    // ── Tests de sécurité C1 + I1 ────────────────────────────────────────────
+
+    /// C1 : version provenant d'un plugin.json tiers avec traversée (`../../../../pwned`).
+    /// Le plugin doit s'installer dans `cache/<mkt>/<plugin>/unknown/` (fallback),
+    /// et rien ne doit être créé/supprimé hors du cache.
+    #[test]
+    fn install_plugin_malicious_version_falls_back_to_unknown() {
+        let (_d, home) = home();
+        seed_rel_marketplace(&home, "m", "p", Some("../../../../pwned"));
+
+        // Sentinelle hors cache : ce chemin ne doit PAS être touché.
+        let sentinel = home.plugins_dir().join("../../../../pwned");
+        // On crée le répertoire parent si nécessaire, mais on vérifie surtout que le test
+        // s'exécute sans panique et que l'installation atterrit dans unknown/.
+        let cache_root = home.plugins_dir().join("cache");
+
+        install_plugin(&home, "m", "p").unwrap();
+
+        // Le plugin doit atterrir dans unknown/, pas dans le chemin malicieux.
+        let good_dest = cache_root.join("m").join("p").join("unknown");
+        assert!(good_dest.join("SKILL.md").is_file(), "SKILL.md dans cache/.../unknown/");
+
+        // Le chemin malicieux (../../../../pwned) ne doit pas exister sous cache.
+        let bad_dest = cache_root.join("../../../../pwned");
+        assert!(!bad_dest.exists(), "aucun répertoire hors cache créé par la version malicieuse");
+
+        // Le sentinelle créé manuellement (si accessible) ne doit pas avoir été supprimé.
+        // (Il n'existe pas dans ce test car on ne le crée pas — vérification indirecte suffisante.)
+        let _ = sentinel; // utilisé pour documenter l'intention
+    }
+
+    /// I1 (Unix uniquement) : la source du plugin est un lien symbolique vers un répertoire
+    /// externe. `install_plugin` doit retourner Err et ne rien copier dans le cache.
+    #[cfg(unix)]
+    #[test]
+    fn install_plugin_rejects_symlinked_source_dir() {
+        use std::os::unix::fs::symlink;
+
+        let (_d, home) = home();
+
+        // Répertoire externe (cible du symlink) avec un fichier sensible.
+        let external = tempfile::tempdir().unwrap();
+        std::fs::write(external.path().join("secret.txt"), "top secret").unwrap();
+
+        // Marketplace avec manifeste pointant vers ./plugins/evil.
+        let mdir = home.plugins_dir().join("marketplaces").join("m");
+        let cp = mdir.join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        std::fs::write(
+            cp.join("marketplace.json"),
+            r#"{"name":"m","plugins":[{"name":"evil","description":"d","source":"./plugins/evil"}]}"#,
+        )
+        .unwrap();
+
+        // Le dossier plugins/evil est un symlink vers le répertoire externe.
+        let plugins_dir = mdir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        symlink(external.path(), plugins_dir.join("evil")).unwrap();
+
+        // L'installation doit échouer car la source est hors de la marketplace (symlink).
+        let result = install_plugin(&home, "m", "evil");
+        assert!(result.is_err(), "doit rejeter un source symlinké vers l'extérieur");
+
+        // Rien ne doit avoir été copié dans le cache.
+        let cache = home.plugins_dir().join("cache");
+        assert!(
+            !cache.join("m").join("evil").exists(),
+            "aucun fichier copié dans le cache"
+        );
     }
 
     #[test]
