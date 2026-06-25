@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 use super::app::{App, BrowseView, DeleteKind, Focus, PickerMode, PurgeScope, Section};
-use crate::tui::app::{human_size, humanize_path};
+use crate::tui::app::{human_size, humanize_path, MktJob};
 use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
 use crate::tui::mcp_editor::{McpEdit, McpLevel, McpRow};
 use claudine_core::{scan_projects, MarketplaceSource, McpTransport};
@@ -911,7 +911,7 @@ fn render_help(f: &mut Frame, area: Rect) {
     let rows = [
         ("1 / 2 / 3 / 4", "Projets / Mémoire / Config / Extensions"),
         ("Tab", "section suivante"),
-        ("Extensions", "hooks (Enter) · plugins (p) · MCP (m) · marketplaces (g → Enter: catalogue) ; E édite settings.json"),
+        ("Extensions", "hooks (Enter) · plugins (p) · MCP (m) · marketplaces (g → Enter: catalogue, i installe) ; E édite settings.json"),
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
@@ -1683,7 +1683,7 @@ fn render_marketplaces(app: &App, f: &mut Frame, area: Rect) {
         return;
     };
     if let Some(c) = &m.catalog {
-        render_plugin_catalog(c, f, area);
+        render_plugin_catalog(c, app.mkt_job.as_ref(), f, area);
         return;
     }
     let popup = centered_rect(78, 68, area);
@@ -1764,14 +1764,16 @@ fn render_marketplaces(app: &App, f: &mut Frame, area: Rect) {
 }
 
 /// Modal du catalogue de plugins d'une marketplace (2ᵉ niveau).
-fn render_plugin_catalog(c: &PluginCatalog, f: &mut Frame, area: Rect) {
+fn render_plugin_catalog(c: &PluginCatalog, job: Option<&MktJob>, f: &mut Frame, area: Rect) {
     let popup = centered_rect(78, 72, area);
     f.render_widget(Clear, popup);
 
     let hint = if c.confirm_uninstall {
         " o/n confirmer "
+    } else if job.is_some() {
+        " (installation en cours…) · Esc retour "
     } else {
-        " Espace activer/désact. · d désinstaller · Esc retour "
+        " Espace activer/désact. · i installer · d désinstaller · Esc retour "
     };
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1823,6 +1825,16 @@ fn render_plugin_catalog(c: &PluginCatalog, f: &mut Frame, area: Rect) {
                 .fg(Color::Black)
                 .bg(Color::Red)
                 .add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    if let Some(job) = job {
+        const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+        let s = SPINNER[(job.frame as usize) % SPINNER.len()];
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!("  {s} {}…", job.label),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         )));
     }
 

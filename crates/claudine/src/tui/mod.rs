@@ -483,6 +483,7 @@ fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
         CatalogClose,
         ToggleEnable,
         Uninstall,
+        Install,
     }
     // `busy` lu avant d'emprunter `app.marketplaces` (évite le conflit d'emprunt).
     let busy = app.mkt_job.is_some();
@@ -513,8 +514,9 @@ fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
                         c.move_sel(1);
                         None
                     }
-                    KeyCode::Char(' ') => Some(Deferred::ToggleEnable),
-                    KeyCode::Char('d') => {
+                    KeyCode::Char(' ') if !busy => Some(Deferred::ToggleEnable),
+                    KeyCode::Char('i') if !busy => Some(Deferred::Install),
+                    KeyCode::Char('d') if !busy => {
                         c.begin_uninstall();
                         None
                     }
@@ -583,6 +585,7 @@ fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
         Some(Deferred::CatalogClose) => app.catalog_close(),
         Some(Deferred::ToggleEnable) => app.catalog_toggle_enable(),
         Some(Deferred::Uninstall) => app.catalog_uninstall_confirmed(),
+        Some(Deferred::Install) => app.catalog_install(),
         None => {}
     }
 }
