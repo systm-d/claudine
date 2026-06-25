@@ -17,6 +17,7 @@ pub struct MarketplacesManager {
     pub mode: MktMode,
     pub input: String,
     pub confirm_remove: bool,
+    #[allow(dead_code)] // câblé en Tasks 3-4 (catalogue de plugins)
     pub catalog: Option<PluginCatalog>,
 }
 
@@ -75,6 +76,7 @@ impl MarketplacesManager {
 }
 
 /// Une ligne du catalogue d'une marketplace.
+#[allow(dead_code)] // champs consommés par le rendu en Task 4
 #[derive(Debug)]
 pub struct CatalogEntry {
     pub name: String,
@@ -84,6 +86,7 @@ pub struct CatalogEntry {
 }
 
 /// Niveau « catalogue » : les plugins d'une marketplace avec leur état.
+#[allow(dead_code)] // câblé en Tasks 3-4
 #[derive(Debug)]
 pub struct PluginCatalog {
     pub marketplace: String,
@@ -92,6 +95,7 @@ pub struct PluginCatalog {
     pub confirm_uninstall: bool,
 }
 
+#[allow(dead_code)] // méthodes consommées en Tasks 3-4
 impl PluginCatalog {
     /// Construit le catalogue : pour chaque plugin du manifeste, calcule
     /// installé/activé d'après la liste des plugins installés (clé `<nom>@<mkt>`).

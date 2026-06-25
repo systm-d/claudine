@@ -105,3 +105,24 @@ Task 4: complete (commit 4ffaece, review clean — Approved) — câblage App + 
 Task 5: complete (commit ab39535, review clean — Approved) — rendu render_marketplaces (3 états + spinner), footer/aide (g), allow(dead_code) MktJob.label retiré. Workspace: 137 tests verts, 0 clippy. 1 Minor (url.clone). PHASE 2c-1 5/5.
 Revue finale (opus, e153d47..ab39535) : « Ready to merge: Yes », 0 Critical/Important. Sécurité anti-injection validée bout-en-bout, atomicité + concurrence saines. Fix recommandé T2 (update no-op→erreur) + T3 (derive Debug).
 Fix wave finale: complete (commit a7ed62b, re-review Approved) — update_marketplace erre sur désync (check avant pull) + derive Debug MarketplacesManager + test. Workspace 138 tests verts, 0 clippy. PHASE 2c-1 TERMINÉE, prête pour merge.
+PHASE 2c-1 mergée: PR #5 → main (merge e624e98), branche supprimée, main resync. 138 tests verts post-merge.
+
+--- PHASE 2c-2a (branche claudine-phase2c2a) — Catalogue de plugins + désinstallation ---
+
+Plan: docs/superpowers/plans/2026-06-23-claudine-phase2c2a-catalogue.md
+Base branche: f9aa322 (spec + plan commités)
+
+## Tâches 2c-2a
+- Task 1: cœur — read_installed_plugins (exposé) + uninstall_plugin — complete
+- Task 2: TUI — état PluginCatalog (2e niveau) — pending
+- Task 3: TUI — câblage catalogue (app + routage) — pending
+- Task 4: TUI — rendu catalogue + aide + vérif finale — pending
+
+## Findings (Minor) 2c-2a à revoir au review final
+- T2: `allow(dead_code)` ajoutés sur PluginCatalog/CatalogEntry/catalog (câblage Tasks 3-4). À RETIRER quand Task 3 (méthodes/field) et Task 4 (champs via rendu) consomment — vérifier clippy 0 warning sans eux au review final.
+
+## Sécurité 2c-2a (à corriger dans la vague de fix Task 1)
+- [MEDIUM] Path traversal dans `uninstall_plugin` : `path.starts_with(cache_root)` est lexical → un `installPath` avec `..` (ex. `<cache>/../../x`) passe le garde-fou puis serait supprimé hors cache. Fix : rejeter tout composant `..` (lexical) + canonicaliser les deux chemins avant comparaison (neutralise symlinks). Pertinent car 2c-2b écrira `installPath`.
+
+## Completed 2c-2a
+Task 1: complete (commits b74d6dd impl + e118813 fix sécurité, review+re-review clean — Approved) — read_installed_plugins (wrapper sur read_plugins) + uninstall_plugin (cache confiné). MEDIUM path traversal neutralisé (rejet `..` lexical + canonicalisation symlinks). 5 tests uninstall, 83/83 crate, 0 clippy.
