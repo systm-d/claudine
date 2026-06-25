@@ -358,6 +358,41 @@ mod git {
         finish(c, "git clone")
     }
 
+    /// `git clone -- <url> <dest>` (historique **complet**, sans `--depth`) afin de
+    /// pouvoir extraire ensuite n'importe quel commit épinglé. Durci comme `clone`.
+    #[allow(dead_code)]
+    pub fn clone_full(url: &str, dest: &Path) -> Result<()> {
+        if url.starts_with('-') {
+            return Err(CoreError::Marketplace(format!("url invalide : {url}")));
+        }
+        let mut c = Command::new("git");
+        c.arg("-c")
+            .arg("protocol.ext.allow=never")
+            .arg("clone")
+            .arg("--")
+            .arg(url)
+            .arg(dest);
+        c.env("GIT_TERMINAL_PROMPT", "0");
+        finish(c, "git clone")
+    }
+
+    /// `git -C <dir> checkout --detach <commit>` : positionne l'arbre de travail
+    /// sur le commit épinglé. Refuse un commit ressemblant à une option.
+    #[allow(dead_code)]
+    pub fn checkout(dir: &Path, commit: &str) -> Result<()> {
+        if commit.starts_with('-') {
+            return Err(CoreError::Marketplace(format!("commit invalide : {commit}")));
+        }
+        let mut c = Command::new("git");
+        c.arg("-C")
+            .arg(dir)
+            .arg("checkout")
+            .arg("--detach")
+            .arg(commit);
+        c.env("GIT_TERMINAL_PROMPT", "0");
+        finish(c, "git checkout")
+    }
+
     /// `git -C <dir> pull --ff-only`.
     pub fn pull(dir: &Path) -> Result<()> {
         let mut c = Command::new("git");
@@ -690,6 +725,47 @@ mod tests {
         let src = MarketplaceSource::Git { url: "--upload-pack=evil".into() };
         assert!(add_marketplace(&home, src).is_err());
         assert!(read_marketplaces(&home).unwrap().is_empty());
+    }
+
+    /// Renvoie le SHA HEAD d'un dépôt.
+    fn head_sha(repo: &StdPath) -> String {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .expect("git rev-parse");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn git_clone_full_then_checkout_pins_commit() {
+        // Dépôt avec 2 commits : v1 puis v2 d'un même fichier.
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path();
+        git(&["init", "-q", "-b", "main"], root);
+        git(&["config", "user.email", "t@t"], root);
+        git(&["config", "user.name", "t"], root);
+        std::fs::write(root.join("f.txt"), "v1").unwrap();
+        git(&["add", "-A"], root);
+        git(&["commit", "-q", "-m", "c1"], root);
+        let sha1 = head_sha(root);
+        std::fs::write(root.join("f.txt"), "v2").unwrap();
+        git(&["add", "-A"], root);
+        git(&["commit", "-q", "-m", "c2"], root);
+
+        let dest = tempfile::tempdir().unwrap();
+        let dest = dest.path().join("clone");
+        super::git::clone_full(&root.to_string_lossy(), &dest).unwrap();
+        super::git::checkout(&dest, &sha1).unwrap();
+        assert_eq!(std::fs::read_to_string(dest.join("f.txt")).unwrap(), "v1");
+
+        // Commit inexistant → Err.
+        assert!(super::git::checkout(&dest, "0000000000000000000000000000000000000000").is_err());
+        // URL/commit ressemblant à une option → Err (durcissement).
+        assert!(super::git::clone_full("--upload-pack=evil", &dest).is_err());
+        assert!(super::git::checkout(&dest, "-x").is_err());
     }
 
     #[test]
