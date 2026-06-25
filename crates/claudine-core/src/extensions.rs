@@ -536,15 +536,30 @@ pub fn uninstall_plugin(home: &ClaudeHome, plugin: &str, marketplace: &str) -> R
 
     // Supprime le dossier de cache, confiné strictement sous plugins/cache/.
     if let Some(install_path) = user_entry.get("installPath").and_then(|p| p.as_str()) {
-        let cache_root = home.plugins_dir().join("cache");
         let path = PathBuf::from(install_path);
-        if !path.starts_with(&cache_root) || path == cache_root {
+        let cache_root = home.plugins_dir().join("cache");
+        // Anti-traversée : refuse tout composant `..` (le préfixe lexical ne suffit
+        // pas), exige la confinement sous cache/, et refuse cache/ lui-même.
+        let has_parent = path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir));
+        if has_parent || !path.starts_with(&cache_root) || path == cache_root {
             return Err(CoreError::Marketplace(format!(
                 "chemin d'installation hors cache : {install_path}"
             )));
         }
         if path.exists() {
-            fs::remove_dir_all(&path).map_err(|e| CoreError::io(&path, e))?;
+            // Neutralise un éventuel lien symbolique : la cible réelle doit rester
+            // sous cache/ une fois canonicalisée.
+            let canon = std::fs::canonicalize(&path).map_err(|e| CoreError::io(&path, e))?;
+            let canon_root =
+                std::fs::canonicalize(&cache_root).map_err(|e| CoreError::io(&cache_root, e))?;
+            if !canon.starts_with(&canon_root) || canon == canon_root {
+                return Err(CoreError::Marketplace(format!(
+                    "chemin d'installation hors cache : {install_path}"
+                )));
+            }
+            fs::remove_dir_all(&canon).map_err(|e| CoreError::io(&canon, e))?;
         }
     }
 
@@ -881,5 +896,23 @@ mod tests {
     fn uninstall_plugin_unknown_key_errors() {
         let (_d, home) = home_with(&[("plugins/installed_plugins.json", r#"{"version":2,"plugins":{}}"#)]);
         assert!(uninstall_plugin(&home, "nope", "m").is_err());
+    }
+
+    #[test]
+    fn uninstall_plugin_rejects_dotdot_traversal() {
+        let (_d, home) = home_with(&[]);
+        let base = home.base.clone();
+        let evil_target = base.join("evil_target");
+        std::fs::create_dir_all(&evil_target).unwrap();
+        std::fs::create_dir_all(base.join("plugins/cache")).unwrap();
+        // installPath lexicalement préfixé par cache/ mais qui s'évade via `..`.
+        let install_path = format!("{}/plugins/cache/../../evil_target", base.display());
+        let installed = format!(
+            r#"{{"version":2,"plugins":{{"foo@m":[{{"scope":"user","installPath":"{install_path}","version":"1"}}]}}}}"#
+        );
+        std::fs::write(base.join("plugins/installed_plugins.json"), installed).unwrap();
+
+        assert!(uninstall_plugin(&home, "foo", "m").is_err());
+        assert!(evil_target.exists(), "cible hors cache via `..` non supprimée");
     }
 }
