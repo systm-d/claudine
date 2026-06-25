@@ -33,7 +33,7 @@ pub use housekeeping::{
 pub use search::find_in_session;
 pub use settings::{settings_catalog, FieldKind, FieldSpec, SettingsDoc};
 pub use extensions::{
-    read_extensions, read_hook_groups, write_hooks, set_plugin_enabled, mcp_config_path, read_user_mcp_servers, write_user_mcp_servers, Extensions, HookCommand, HookEntry, HookGroup, McpEntry, McpServer, McpTransport, PluginEntry,
+    read_extensions, read_hook_groups, write_hooks, set_plugin_enabled, read_installed_plugins, uninstall_plugin, mcp_config_path, read_user_mcp_servers, write_user_mcp_servers, Extensions, HookCommand, HookEntry, HookGroup, McpEntry, McpServer, McpTransport, PluginEntry,
 };
 pub use marketplaces::{
     add_marketplace, iso8601_utc, read_marketplace_manifest, read_marketplaces,
