@@ -8,16 +8,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use claudine_core::{
     add_marketplace, apply as import_apply, decode_encoded_to_path, discover_homes,
     dry_run as import_dry_run, empty_trash, export, find_in_session, list_trash, move_session,
-    purge_trash_item, read_extensions, read_hook_groups, read_marketplaces,
-    read_user_mcp_servers, remove_marketplace, restore_trash_entry, scan_projects,
-    set_plugin_enabled, trash_project, trash_session, update_marketplace, write_hooks,
-    write_user_mcp_servers, ClaudeHome, ClaudineConfig, Extensions, ExportOptions, ImportOptions,
-    MarketplaceSource, Project, RemapTable, SessionMeta,
+    purge_trash_item, read_extensions, read_hook_groups, read_installed_plugins,
+    read_marketplace_manifest, read_marketplaces, read_user_mcp_servers, remove_marketplace,
+    restore_trash_entry, scan_projects, set_plugin_enabled, trash_project, trash_session,
+    uninstall_plugin, update_marketplace, write_hooks, write_user_mcp_servers, ClaudeHome,
+    ClaudineConfig, Extensions, ExportOptions, ImportOptions, MarketplaceSource, Project,
+    RemapTable, SessionMeta,
 };
 use serde_json::Value;
 
 use crate::tui::hooks_editor::HooksEditor;
 use crate::tui::marketplaces::MarketplacesManager;
+use crate::tui::marketplaces::PluginCatalog;
 use crate::tui::mcp_editor::McpEditor;
 use crate::tui::settings_form::SettingsForm;
 
@@ -1222,6 +1224,91 @@ impl App {
             Ok(msg) => msg,
             Err(e) => format!("Échec : {e}"),
         });
+    }
+
+    // --- Catalogue de plugins d'une marketplace ---
+
+    /// Ouvre le catalogue de la marketplace sélectionnée (Enter en liste).
+    pub fn open_catalog(&mut self) {
+        let Some(name) = self.marketplaces.as_ref().and_then(|m| m.selected_name()) else {
+            return;
+        };
+        let home = self.home().clone();
+        match read_marketplace_manifest(&home, &name) {
+            Ok(manifest) => {
+                let installed = read_installed_plugins(&home);
+                let catalog = PluginCatalog::new(name, &manifest.plugins, &installed);
+                if let Some(m) = self.marketplaces.as_mut() {
+                    m.catalog = Some(catalog);
+                }
+            }
+            Err(e) => self.status = Some(format!("Catalogue indisponible : {e}")),
+        }
+    }
+
+    pub fn catalog_close(&mut self) {
+        if let Some(m) = self.marketplaces.as_mut() {
+            m.catalog = None;
+        }
+    }
+
+    /// Active/désactive le plugin sélectionné (si installé).
+    pub fn catalog_toggle_enable(&mut self) {
+        let info = self
+            .marketplaces
+            .as_ref()
+            .and_then(|m| m.catalog.as_ref())
+            .and_then(|c| {
+                c.selected()
+                    .filter(|e| e.installed)
+                    .map(|e| (c.marketplace.clone(), e.name.clone(), e.enabled))
+            });
+        let Some((mkt, plugin, enabled)) = info else {
+            return;
+        };
+        let key = format!("{plugin}@{mkt}");
+        let home = self.home().clone();
+        match set_plugin_enabled(&home, &key, !enabled) {
+            Ok(()) => {
+                if let Some(c) = self.marketplaces.as_mut().and_then(|m| m.catalog.as_mut()) {
+                    if let Some(e) = c.entries.iter_mut().find(|e| e.name == plugin) {
+                        e.enabled = !enabled;
+                    }
+                }
+                let verb = if enabled { "désactivé" } else { "activé" };
+                self.status = Some(format!("Plugin « {plugin} » {verb}"));
+            }
+            Err(e) => self.status = Some(format!("Échec : {e}")),
+        }
+    }
+
+    /// Désinstalle le plugin sélectionné (après confirmation).
+    pub fn catalog_uninstall_confirmed(&mut self) {
+        let info = {
+            let Some(c) = self.marketplaces.as_mut().and_then(|m| m.catalog.as_mut()) else {
+                return;
+            };
+            c.confirm_uninstall = false;
+            c.selected()
+                .filter(|e| e.installed)
+                .map(|e| (c.marketplace.clone(), e.name.clone()))
+        };
+        let Some((mkt, plugin)) = info else {
+            return;
+        };
+        let home = self.home().clone();
+        match uninstall_plugin(&home, &plugin, &mkt) {
+            Ok(()) => {
+                if let Some(c) = self.marketplaces.as_mut().and_then(|m| m.catalog.as_mut()) {
+                    if let Some(e) = c.entries.iter_mut().find(|e| e.name == plugin) {
+                        e.installed = false;
+                        e.enabled = false;
+                    }
+                }
+                self.status = Some(format!("Plugin « {plugin} » désinstallé"));
+            }
+            Err(e) => self.status = Some(format!("Échec désinstallation : {e}")),
+        }
     }
 
     // --- Modal de bascule des plugins ---
@@ -3034,6 +3121,74 @@ mod tests {
         assert!(app.status.as_deref().unwrap().contains("non reconnue"));
         // Retour en mode liste.
         assert_eq!(app.marketplaces.as_ref().unwrap().mode, crate::tui::marketplaces::MktMode::List);
+    }
+
+    /// Home avec une marketplace « m » clonée (manifeste 2 plugins) + plugin « a » installé/activé.
+    fn home_with_catalog() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().to_path_buf();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        let mdir = base.join("plugins/marketplaces/m/.claude-plugin");
+        fs::create_dir_all(&mdir).unwrap();
+        fs::write(
+            mdir.join("marketplace.json"),
+            r#"{"name":"m","plugins":[{"name":"a","description":"da"},{"name":"b"}]}"#,
+        )
+        .unwrap();
+        let reg = format!(
+            r#"{{"m":{{"source":{{"source":"github","repo":"o/r"}},"installLocation":"{}/plugins/marketplaces/m","lastUpdated":"x"}}}}"#,
+            base.display()
+        );
+        fs::write(base.join("plugins/known_marketplaces.json"), reg).unwrap();
+        let cache = base.join("plugins/cache/m/a/1.0.0");
+        fs::create_dir_all(&cache).unwrap();
+        let installed = format!(
+            r#"{{"version":2,"plugins":{{"a@m":[{{"scope":"user","installPath":"{}","version":"1.0.0"}}]}}}}"#,
+            cache.display()
+        );
+        fs::write(base.join("plugins/installed_plugins.json"), installed).unwrap();
+        fs::write(base.join("settings.json"), r#"{"enabledPlugins":{"a@m":true}}"#).unwrap();
+        (dir, base)
+    }
+
+    #[test]
+    fn catalog_open_toggle_and_uninstall() {
+        let (_d, base) = home_with_catalog();
+        let cache = base.join("plugins/cache/m/a/1.0.0");
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(&base)]);
+        app.set_section(Section::Extensions);
+        app.open_marketplaces();
+        app.open_catalog();
+
+        {
+            let c = app.marketplaces.as_ref().unwrap().catalog.as_ref().unwrap();
+            assert_eq!(c.entries.len(), 2);
+            assert!(c.entries[0].installed && c.entries[0].enabled); // a
+            assert!(!c.entries[1].installed); // b
+        }
+
+        // Espace sur « a » (idx 0) → désactivé.
+        app.catalog_toggle_enable();
+        assert!(!app.marketplaces.as_ref().unwrap().catalog.as_ref().unwrap().entries[0].enabled);
+
+        // Désinstallation de « a ».
+        app.marketplaces.as_mut().unwrap().catalog.as_mut().unwrap().begin_uninstall();
+        app.catalog_uninstall_confirmed();
+        let c = app.marketplaces.as_ref().unwrap().catalog.as_ref().unwrap();
+        assert!(!c.entries[0].installed);
+        assert!(!cache.exists(), "dossier de cache supprimé");
+    }
+
+    #[test]
+    fn catalog_close_returns_to_list() {
+        let (_d, base) = home_with_catalog();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(&base)]);
+        app.set_section(Section::Extensions);
+        app.open_marketplaces();
+        app.open_catalog();
+        assert!(app.marketplaces.as_ref().unwrap().catalog.is_some());
+        app.catalog_close();
+        assert!(app.marketplaces.as_ref().unwrap().catalog.is_none());
     }
 }
 

@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 
 use crate::home::ClaudeHome;
 use crate::settings::SettingsDoc;
-use crate::error::Result;
+use crate::error::{CoreError, Result};
 
 /// Un hook : un évènement, un éventuel filtre (`matcher`) et ses commandes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -503,6 +503,88 @@ fn read_mcp(home: &ClaudeHome) -> Vec<McpEntry> {
     out
 }
 
+/// Liste publique des plugins installés (réutilise le parsing de `read_plugins`).
+/// Chaque `PluginEntry.name` est la clé `"<plugin>@<marketplace>"`.
+pub fn read_installed_plugins(home: &ClaudeHome) -> Vec<PluginEntry> {
+    read_plugins(home)
+}
+
+/// Désinstalle un plugin (portée user) : supprime son dossier de cache (confiné
+/// sous `plugins/cache/`), retire son entrée d'`installed_plugins.json` et sa
+/// clé d'`enabledPlugins`. Backup + écriture atomique via `SettingsDoc`.
+pub fn uninstall_plugin(home: &ClaudeHome, plugin: &str, marketplace: &str) -> Result<()> {
+    let key = format!("{plugin}@{marketplace}");
+    let installed_path = home.plugins_dir().join("installed_plugins.json");
+    let mut doc = SettingsDoc::load(&installed_path)?;
+
+    let Some(entries) = doc
+        .get(&["plugins", key.as_str()])
+        .and_then(|v| v.as_array())
+        .cloned()
+    else {
+        return Err(CoreError::Marketplace(format!("plugin non installé : {key}")));
+    };
+
+    // Entrée de portée `user` (à défaut, la première).
+    let user_entry = entries
+        .iter()
+        .find(|e| e.get("scope").and_then(|s| s.as_str()) == Some("user"))
+        .or_else(|| entries.first());
+    let Some(user_entry) = user_entry else {
+        return Err(CoreError::Marketplace(format!("plugin non installé : {key}")));
+    };
+
+    // Supprime le dossier de cache, confiné strictement sous plugins/cache/.
+    if let Some(install_path) = user_entry.get("installPath").and_then(|p| p.as_str()) {
+        let path = PathBuf::from(install_path);
+        let cache_root = home.plugins_dir().join("cache");
+        // Anti-traversée : refuse tout composant `..` (le préfixe lexical ne suffit
+        // pas), exige la confinement sous cache/, et refuse cache/ lui-même.
+        let has_parent = path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir));
+        if has_parent || !path.starts_with(&cache_root) || path == cache_root {
+            return Err(CoreError::Marketplace(format!(
+                "chemin d'installation hors cache : {install_path}"
+            )));
+        }
+        if path.exists() {
+            // Neutralise un éventuel lien symbolique : la cible réelle doit rester
+            // sous cache/ une fois canonicalisée.
+            let canon = std::fs::canonicalize(&path).map_err(|e| CoreError::io(&path, e))?;
+            let canon_root =
+                std::fs::canonicalize(&cache_root).map_err(|e| CoreError::io(&cache_root, e))?;
+            if !canon.starts_with(&canon_root) || canon == canon_root {
+                return Err(CoreError::Marketplace(format!(
+                    "chemin d'installation hors cache : {install_path}"
+                )));
+            }
+            fs::remove_dir_all(&canon).map_err(|e| CoreError::io(&canon, e))?;
+        }
+    }
+
+    // Retire l'entrée user du tableau (clé entière si plus rien).
+    let remaining: Vec<Value> = entries
+        .into_iter()
+        .filter(|e| e.get("scope").and_then(|s| s.as_str()) != Some("user"))
+        .collect();
+    if remaining.is_empty() {
+        doc.unset(&["plugins", key.as_str()]);
+    } else {
+        doc.set(&["plugins", key.as_str()], Value::Array(remaining));
+    }
+    doc.save(&installed_path)?;
+
+    // Retire la clé d'enabledPlugins (settings.json), si présente.
+    let settings_path = home.settings_file();
+    let mut sdoc = SettingsDoc::load(&settings_path)?;
+    if sdoc.get(&["enabledPlugins", key.as_str()]).is_some() {
+        sdoc.unset(&["enabledPlugins", key.as_str()]);
+        sdoc.save(&settings_path)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,5 +828,91 @@ mod tests {
         let doc = crate::settings::SettingsDoc::load(&mcp_config_path(&home)).unwrap();
         assert!(doc.get(&["mcpServers"]).is_none());
         assert_eq!(doc.get_i64(&["numStartups"]), Some(1));
+    }
+
+    #[test]
+    fn read_installed_plugins_exposes_keys_and_enabled() {
+        let installed = r#"{"version":2,"plugins":{
+            "foo@m":[{"scope":"user","installPath":"/x","version":"1.0.0"}],
+            "bar@m":[{"scope":"user","installPath":"/y","version":"2.0.0"}]
+        }}"#;
+        let settings = r#"{"enabledPlugins":{"foo@m":true,"bar@m":false}}"#;
+        let (_d, home) = home_with(&[
+            ("plugins/installed_plugins.json", installed),
+            ("settings.json", settings),
+        ]);
+        let got = read_installed_plugins(&home);
+        assert!(got.iter().find(|p| p.name == "foo@m").unwrap().enabled);
+        assert!(!got.iter().find(|p| p.name == "bar@m").unwrap().enabled);
+    }
+
+    #[test]
+    fn uninstall_plugin_removes_cache_entry_and_enabled() {
+        let (_d, home) = home_with(&[("settings.json", r#"{"enabledPlugins":{"foo@m":true,"keep@m":true}}"#)]);
+        let base = home.base.clone();
+        // Dossiers de cache réels sous plugins/cache/.
+        let foo_cache = base.join("plugins/cache/m/foo/1.0.0");
+        std::fs::create_dir_all(&foo_cache).unwrap();
+        std::fs::create_dir_all(base.join("plugins/cache/m/keep/1.0.0")).unwrap();
+        let installed = format!(
+            r#"{{"version":2,"plugins":{{
+                "foo@m":[{{"scope":"user","installPath":"{foo}","version":"1.0.0"}}],
+                "keep@m":[{{"scope":"user","installPath":"{base}/plugins/cache/m/keep/1.0.0","version":"1.0.0"}}]
+            }}}}"#,
+            foo = foo_cache.display(),
+            base = base.display(),
+        );
+        std::fs::write(base.join("plugins/installed_plugins.json"), installed).unwrap();
+
+        uninstall_plugin(&home, "foo", "m").unwrap();
+
+        assert!(!foo_cache.exists(), "dossier de cache supprimé");
+        let back = read_installed_plugins(&home);
+        assert!(back.iter().all(|p| p.name != "foo@m"), "entrée retirée");
+        assert!(back.iter().any(|p| p.name == "keep@m"), "autre entrée préservée");
+        let sdoc = SettingsDoc::load(&home.settings_file()).unwrap();
+        assert!(sdoc.get(&["enabledPlugins", "foo@m"]).is_none(), "clé enabled retirée");
+        assert_eq!(sdoc.get_bool(&["enabledPlugins", "keep@m"]), Some(true), "autre clé préservée");
+    }
+
+    #[test]
+    fn uninstall_plugin_rejects_path_outside_cache() {
+        let (_d, home) = home_with(&[]);
+        let base = home.base.clone();
+        let outside = base.join("evil");
+        std::fs::create_dir_all(&outside).unwrap();
+        let installed = format!(
+            r#"{{"version":2,"plugins":{{"foo@m":[{{"scope":"user","installPath":"{}","version":"1"}}]}}}}"#,
+            outside.display()
+        );
+        std::fs::create_dir_all(base.join("plugins")).unwrap();
+        std::fs::write(base.join("plugins/installed_plugins.json"), installed).unwrap();
+
+        assert!(uninstall_plugin(&home, "foo", "m").is_err());
+        assert!(outside.exists(), "dossier hors cache non supprimé");
+    }
+
+    #[test]
+    fn uninstall_plugin_unknown_key_errors() {
+        let (_d, home) = home_with(&[("plugins/installed_plugins.json", r#"{"version":2,"plugins":{}}"#)]);
+        assert!(uninstall_plugin(&home, "nope", "m").is_err());
+    }
+
+    #[test]
+    fn uninstall_plugin_rejects_dotdot_traversal() {
+        let (_d, home) = home_with(&[]);
+        let base = home.base.clone();
+        let evil_target = base.join("evil_target");
+        std::fs::create_dir_all(&evil_target).unwrap();
+        std::fs::create_dir_all(base.join("plugins/cache")).unwrap();
+        // installPath lexicalement préfixé par cache/ mais qui s'évade via `..`.
+        let install_path = format!("{}/plugins/cache/../../evil_target", base.display());
+        let installed = format!(
+            r#"{{"version":2,"plugins":{{"foo@m":[{{"scope":"user","installPath":"{install_path}","version":"1"}}]}}}}"#
+        );
+        std::fs::write(base.join("plugins/installed_plugins.json"), installed).unwrap();
+
+        assert!(uninstall_plugin(&home, "foo", "m").is_err());
+        assert!(evil_target.exists(), "cible hors cache via `..` non supprimée");
     }
 }
