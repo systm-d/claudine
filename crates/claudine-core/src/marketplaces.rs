@@ -360,7 +360,6 @@ mod git {
 
     /// `git clone -- <url> <dest>` (historique **complet**, sans `--depth`) afin de
     /// pouvoir extraire ensuite n'importe quel commit épinglé. Durci comme `clone`.
-    #[allow(dead_code)]
     pub fn clone_full(url: &str, dest: &Path) -> Result<()> {
         if url.starts_with('-') {
             return Err(CoreError::Marketplace(format!("url invalide : {url}")));
@@ -378,7 +377,6 @@ mod git {
 
     /// `git -C <dir> checkout --detach <commit>` : positionne l'arbre de travail
     /// sur le commit épinglé. Refuse un commit ressemblant à une option.
-    #[allow(dead_code)]
     pub fn checkout(dir: &Path, commit: &str) -> Result<()> {
         if commit.starts_with('-') {
             return Err(CoreError::Marketplace(format!("commit invalide : {commit}")));
@@ -553,11 +551,40 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
             }
             (dir, None)
         }
-        PluginSource::Git { .. } => {
-            // Implémenté en Task 4.
-            return Err(CoreError::Marketplace(
-                "installation git non encore implémentée".to_string(),
-            ));
+        PluginSource::Git { url, commit, subdir } => {
+            std::fs::create_dir_all(&cache_root).map_err(|e| CoreError::io(&cache_root, e))?;
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let temp = cache_root.join(format!("temp_git_{ts}"));
+            if temp.exists() {
+                let _ = std::fs::remove_dir_all(&temp);
+            }
+            // Clone complet + checkout du commit épinglé ; nettoie le temp si échec.
+            if let Err(e) = git::clone_full(url, &temp).and_then(|()| git::checkout(&temp, commit)) {
+                let _ = std::fs::remove_dir_all(&temp);
+                return Err(e);
+            }
+            // Sous-dossier optionnel, confiné sous le temp.
+            let src = match subdir {
+                Some(sd) => {
+                    let sd = sd.trim_start_matches("./");
+                    if sd.split('/').any(|c| c == "..") {
+                        let _ = std::fs::remove_dir_all(&temp);
+                        return Err(CoreError::Marketplace(format!("sous-dossier invalide : {sd}")));
+                    }
+                    temp.join(sd)
+                }
+                None => temp.clone(),
+            };
+            if !src.starts_with(&temp) || !src.is_dir() {
+                let _ = std::fs::remove_dir_all(&temp);
+                return Err(CoreError::Marketplace(
+                    "sous-dossier de plugin introuvable".to_string(),
+                ));
+            }
+            (src, Some(temp))
         }
     };
 
@@ -994,6 +1021,93 @@ mod tests {
         .unwrap();
         assert!(install_plugin(&home, "m", "evil").is_err());
         assert!(!home.plugins_dir().join("cache").join("m").exists());
+    }
+
+    /// Dépôt git « source de plugin » avec plugin.json (version) + fichier, dans un
+    /// sous-dossier optionnel. Renvoie (tempdir, chemin, sha HEAD).
+    fn make_plugin_repo(subdir: Option<&str>, version: &str) -> (tempfile::TempDir, String, String) {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().to_path_buf();
+        git(&["init", "-q", "-b", "main"], &root);
+        git(&["config", "user.email", "t@t"], &root);
+        git(&["config", "user.name", "t"], &root);
+        let base = match subdir {
+            Some(s) => root.join(s),
+            None => root.clone(),
+        };
+        let cp = base.join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        std::fs::write(cp.join("plugin.json"), format!(r#"{{"name":"gp","version":"{version}"}}"#)).unwrap();
+        std::fs::write(base.join("SKILL.md"), "git-body").unwrap();
+        git(&["add", "-A"], &root);
+        git(&["commit", "-q", "-m", "init"], &root);
+        let sha = head_sha(&root);
+        (d, root.to_string_lossy().into_owned(), sha)
+    }
+
+    /// Écrit une marketplace fictive dont le plugin `gp` a une source git donnée.
+    fn seed_git_marketplace(home: &ClaudeHome, mkt: &str, source_json: &str) {
+        let cp = home.plugins_dir().join("marketplaces").join(mkt).join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        let manifest = format!(r#"{{"name":"{mkt}","plugins":[{{"name":"gp","source":{source_json}}}]}}"#);
+        std::fs::write(cp.join("marketplace.json"), manifest).unwrap();
+    }
+
+    #[test]
+    fn install_plugin_git_url_clones_and_pins() {
+        let (_repo, url, sha) = make_plugin_repo(None, "3.0.0");
+        let (_d, home) = home();
+        seed_git_marketplace(&home, "m", &format!(r#"{{"source":"url","url":"{url}","sha":"{sha}"}}"#));
+
+        install_plugin(&home, "m", "gp").unwrap();
+
+        let dest = home.plugins_dir().join("cache/m/gp/3.0.0");
+        assert_eq!(std::fs::read_to_string(dest.join("SKILL.md")).unwrap(), "git-body");
+        let sdoc = SettingsDoc::load(&home.settings_file()).unwrap();
+        assert_eq!(sdoc.get_bool(&["enabledPlugins", "gp@m"]), Some(true));
+        // Aucun dossier temporaire résiduel.
+        let temp_left = std::fs::read_dir(home.plugins_dir().join("cache"))
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with("temp_git_"));
+        assert!(!temp_left, "temp nettoyé");
+    }
+
+    #[test]
+    fn install_plugin_git_subdir_uses_subdirectory() {
+        let (_repo, url, sha) = make_plugin_repo(Some("plugins/gp"), "4.1.0");
+        let (_d, home) = home();
+        seed_git_marketplace(
+            &home,
+            "m",
+            &format!(r#"{{"source":"git-subdir","url":"{url}","path":"plugins/gp","sha":"{sha}"}}"#),
+        );
+
+        install_plugin(&home, "m", "gp").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(home.plugins_dir().join("cache/m/gp/4.1.0/SKILL.md")).unwrap(),
+            "git-body"
+        );
+    }
+
+    #[test]
+    fn install_plugin_git_bad_commit_cleans_temp_and_errors() {
+        let (_repo, url, _sha) = make_plugin_repo(None, "1.0.0");
+        let (_d, home) = home();
+        seed_git_marketplace(
+            &home,
+            "m",
+            &format!(r#"{{"source":"url","url":"{url}","sha":"0000000000000000000000000000000000000000"}}"#),
+        );
+
+        assert!(install_plugin(&home, "m", "gp").is_err());
+        // Pas d'entrée registre, pas de temp résiduel.
+        assert!(!home.plugins_dir().join("installed_plugins.json").exists());
+        let cache = home.plugins_dir().join("cache");
+        if cache.exists() {
+            let temp_left = std::fs::read_dir(&cache).unwrap().flatten().count();
+            assert_eq!(temp_left, 0, "ni temp ni cache résiduel");
+        }
     }
 
     #[test]
