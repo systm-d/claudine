@@ -72,7 +72,6 @@ impl MarketplaceSource {
         }
     }
 
-    #[allow(dead_code)]
     fn to_json(&self) -> Value {
         let mut m = Map::new();
         match self {
@@ -156,7 +155,6 @@ fn known_marketplaces_path(home: &ClaudeHome) -> PathBuf {
 }
 
 /// Nom de marketplace sûr (pas de séparateur de chemin ni de `..`).
-#[allow(dead_code)]
 fn is_safe_name(name: &str) -> bool {
     !name.is_empty()
         && name != "."
@@ -280,9 +278,144 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
+mod git {
+    use super::{CoreError, Result};
+    use std::path::Path;
+    use std::process::Command;
+
+    fn finish(mut cmd: Command, what: &str) -> Result<()> {
+        let output = cmd
+            .output()
+            .map_err(|e| CoreError::Marketplace(format!("git introuvable dans le PATH ({e})")))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let msg: String = stderr.trim().chars().take(300).collect();
+        Err(CoreError::Marketplace(format!("{what} a échoué : {msg}")))
+    }
+
+    /// `git clone --depth 1 <url> <dest>`.
+    pub fn clone(url: &str, dest: &Path) -> Result<()> {
+        let mut c = Command::new("git");
+        c.arg("clone").arg("--depth").arg("1").arg(url).arg(dest);
+        c.env("GIT_TERMINAL_PROMPT", "0");
+        finish(c, "git clone")
+    }
+
+    /// `git -C <dir> pull --ff-only`.
+    pub fn pull(dir: &Path) -> Result<()> {
+        let mut c = Command::new("git");
+        c.arg("-C").arg(dir).arg("pull").arg("--ff-only");
+        c.env("GIT_TERMINAL_PROMPT", "0");
+        finish(c, "git pull")
+    }
+}
+
+/// Clone une marketplace, valide son manifeste, l'enregistre. Le nom définitif
+/// vient du manifeste ; rollback du clone si invalide / déjà présente.
+pub fn add_marketplace(home: &ClaudeHome, source: MarketplaceSource) -> Result<Marketplace> {
+    let mdir = marketplaces_dir(home);
+    std::fs::create_dir_all(&mdir).map_err(|e| CoreError::io(&mdir, e))?;
+
+    let tmp = mdir.join(format!(".tmp-add-{}", source.provisional_name()));
+    if tmp.exists() {
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+    git::clone(&source.clone_url(), &tmp)?;
+
+    let manifest = match read_manifest_at(&tmp) {
+        Ok(m) => m,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(e);
+        }
+    };
+    if !is_safe_name(&manifest.name) {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(CoreError::Marketplace(format!(
+            "nom de marketplace invalide : {}",
+            manifest.name
+        )));
+    }
+
+    let dest = mdir.join(&manifest.name);
+    if dest.exists() {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(CoreError::Marketplace(format!(
+            "marketplace « {} » déjà présente",
+            manifest.name
+        )));
+    }
+    std::fs::rename(&tmp, &dest).map_err(|e| CoreError::io(&dest, e))?;
+
+    let now = iso8601_utc(SystemTime::now());
+    let mut entry = Map::new();
+    entry.insert("source".into(), source.to_json());
+    entry.insert(
+        "installLocation".into(),
+        Value::String(dest.to_string_lossy().into_owned()),
+    );
+    entry.insert("lastUpdated".into(), Value::String(now.clone()));
+
+    let path = known_marketplaces_path(home);
+    let mut doc = SettingsDoc::load(&path)?;
+    doc.set(&[manifest.name.as_str()], Value::Object(entry));
+    doc.save(&path)?;
+
+    Ok(Marketplace {
+        name: manifest.name,
+        source,
+        install_location: dest,
+        last_updated: now,
+    })
+}
+
+/// Retire une marketplace : supprime son dossier (confiné) et son entrée.
+pub fn remove_marketplace(home: &ClaudeHome, name: &str) -> Result<()> {
+    if !is_safe_name(name) {
+        return Err(CoreError::Marketplace(format!(
+            "nom de marketplace invalide : {name}"
+        )));
+    }
+    let dir = marketplaces_dir(home).join(name);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| CoreError::io(&dir, e))?;
+    }
+    let path = known_marketplaces_path(home);
+    let mut doc = SettingsDoc::load(&path)?;
+    doc.unset(&[name]);
+    doc.save(&path)
+}
+
+/// Met à jour une marketplace (`git pull`) et rafraîchit `lastUpdated`.
+pub fn update_marketplace(home: &ClaudeHome, name: &str) -> Result<()> {
+    if !is_safe_name(name) {
+        return Err(CoreError::Marketplace(format!(
+            "nom de marketplace invalide : {name}"
+        )));
+    }
+    let dir = marketplaces_dir(home).join(name);
+    if !dir.exists() {
+        return Err(CoreError::Marketplace(format!(
+            "marketplace « {name} » absente"
+        )));
+    }
+    git::pull(&dir)?;
+
+    let path = known_marketplaces_path(home);
+    let mut doc = SettingsDoc::load(&path)?;
+    if doc.get(&[name]).is_some() {
+        doc.set(&[name, "lastUpdated"], Value::String(iso8601_utc(SystemTime::now())));
+        doc.save(&path)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path as StdPath;
     use std::time::{Duration, UNIX_EPOCH};
 
     /// Home jetable (tempdir nu ; `plugins/` est créé à la demande).
@@ -372,5 +505,123 @@ mod tests {
         assert_eq!(man.owner_name.as_deref(), Some("Acme"));
         assert_eq!(man.plugins.len(), 1);
         assert_eq!(man.plugins[0].name, "p1");
+    }
+
+    /// Exécute `git` dans `cwd`, isolé de la config globale/système.
+    fn git(args: &[&str], cwd: &StdPath) {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .status()
+            .expect("git doit être installé pour les tests");
+        assert!(status.success(), "git {args:?} a échoué");
+    }
+
+    /// Dépôt git local jouant le rôle de marketplace, avec un manifeste donné.
+    fn make_repo(manifest: &str) -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        git(&["init", "-q", "-b", "main"], root);
+        git(&["config", "user.email", "t@t"], root);
+        git(&["config", "user.name", "t"], root);
+        let cp = root.join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        std::fs::write(cp.join("marketplace.json"), manifest).unwrap();
+        git(&["add", "-A"], root);
+        git(&["commit", "-q", "-m", "init"], root);
+        d
+    }
+
+    fn valid_manifest(name: &str) -> String {
+        format!(r#"{{"name":"{name}","owner":{{"name":"Acme"}},"plugins":[{{"name":"p1","description":"d"}}]}}"#)
+    }
+
+    #[test]
+    fn add_marketplace_local_clones_validates_registers() {
+        let repo = make_repo(&valid_manifest("acme-mkt"));
+        let (_d, home) = home();
+        let src = MarketplaceSource::Local { path: repo.path().to_path_buf() };
+
+        let mk = add_marketplace(&home, src).unwrap();
+        assert_eq!(mk.name, "acme-mkt");
+
+        let dir = home.plugins_dir().join("marketplaces").join("acme-mkt");
+        assert!(manifest_path(&dir).is_file(), "manifeste cloné présent");
+
+        let list = read_marketplaces(&home).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "acme-mkt");
+        assert!(matches!(list[0].source, MarketplaceSource::Local { .. }));
+        assert!(list[0].last_updated.ends_with('Z'));
+
+        let man = read_marketplace_manifest(&home, "acme-mkt").unwrap();
+        assert_eq!(man.plugins.len(), 1);
+    }
+
+    #[test]
+    fn add_marketplace_rejects_invalid_manifest_without_writing() {
+        let repo = make_repo(r#"{"plugins":[]}"#); // pas de "name"
+        let (_d, home) = home();
+        let src = MarketplaceSource::Local { path: repo.path().to_path_buf() };
+
+        assert!(add_marketplace(&home, src).is_err());
+        assert!(read_marketplaces(&home).unwrap().is_empty(), "registre non écrit");
+        // Aucun dossier résiduel (tmp nettoyé).
+        let mdir = home.plugins_dir().join("marketplaces");
+        if mdir.exists() {
+            assert!(std::fs::read_dir(&mdir).unwrap().flatten().next().is_none());
+        }
+    }
+
+    #[test]
+    fn add_marketplace_duplicate_is_rejected() {
+        let repo = make_repo(&valid_manifest("dup"));
+        let (_d, home) = home();
+        add_marketplace(&home, MarketplaceSource::Local { path: repo.path().to_path_buf() }).unwrap();
+        let again = add_marketplace(&home, MarketplaceSource::Local { path: repo.path().to_path_buf() });
+        assert!(again.is_err());
+        assert_eq!(read_marketplaces(&home).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn remove_marketplace_clears_entry_and_dir() {
+        let repo = make_repo(&valid_manifest("gone"));
+        let (_d, home) = home();
+        add_marketplace(&home, MarketplaceSource::Local { path: repo.path().to_path_buf() }).unwrap();
+        let dir = home.plugins_dir().join("marketplaces").join("gone");
+        assert!(dir.exists());
+
+        remove_marketplace(&home, "gone").unwrap();
+        assert!(!dir.exists());
+        assert!(read_marketplaces(&home).unwrap().is_empty());
+    }
+
+    #[test]
+    fn remove_marketplace_rejects_unsafe_name() {
+        let (_d, home) = home();
+        assert!(remove_marketplace(&home, "../evil").is_err());
+    }
+
+    #[test]
+    fn update_marketplace_pulls_new_commit() {
+        let repo = make_repo(&valid_manifest("upd"));
+        let (_d, home) = home();
+        add_marketplace(&home, MarketplaceSource::Local { path: repo.path().to_path_buf() }).unwrap();
+
+        // Nouveau commit dans la source.
+        std::fs::write(repo.path().join("NEW.txt"), "x").unwrap();
+        git(&["add", "-A"], repo.path());
+        git(&["commit", "-q", "-m", "more"], repo.path());
+
+        update_marketplace(&home, "upd").unwrap();
+        assert!(home
+            .plugins_dir()
+            .join("marketplaces")
+            .join("upd")
+            .join("NEW.txt")
+            .exists());
     }
 }

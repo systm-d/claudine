@@ -36,7 +36,8 @@ pub use extensions::{
     read_extensions, read_hook_groups, write_hooks, set_plugin_enabled, mcp_config_path, read_user_mcp_servers, write_user_mcp_servers, Extensions, HookCommand, HookEntry, HookGroup, McpEntry, McpServer, McpTransport, PluginEntry,
 };
 pub use marketplaces::{
-    iso8601_utc, read_marketplace_manifest, read_marketplaces, Marketplace, MarketplaceManifest,
+    add_marketplace, iso8601_utc, read_marketplace_manifest, read_marketplaces,
+    remove_marketplace, update_marketplace, Marketplace, MarketplaceManifest,
     MarketplaceSource, PluginManifestEntry,
 };
 
