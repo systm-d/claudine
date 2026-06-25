@@ -81,10 +81,21 @@ fn install_panic_hook() {
 fn event_loop(terminal: &mut Tui, mut app: App) -> io::Result<()> {
     while !app.should_quit {
         terminal.draw(|f| ui::render(&mut app, f))?;
-        match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(&mut app, key),
-            Event::Resize(_, _) => {}
-            _ => {}
+        if app.mkt_job_active() {
+            if event::poll(std::time::Duration::from_millis(120))? {
+                if let Event::Key(key) = event::read()? {
+                    if key.kind == KeyEventKind::Press {
+                        handle_key(&mut app, key);
+                    }
+                }
+            }
+            app.tick_mkt_job();
+        } else {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(&mut app, key),
+                Event::Resize(_, _) => {}
+                _ => {}
+            }
         }
         // Édition externe demandée : suspend le TUI, lance l'éditeur, recharge.
         if let Some(path) = app.pending_edit.take() {
@@ -196,6 +207,12 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Gestionnaire de marketplaces (modal).
+    if app.marketplaces.is_some() {
+        handle_marketplaces_key(app, key);
+        return;
+    }
+
     // Bascule des plugins (modal).
     if app.plugins_toggle.is_some() {
         match key.code {
@@ -301,6 +318,8 @@ fn handle_key(app: &mut App, key: KeyEvent) {
 
         // Section Extensions : modal de bascule des plugins.
         KeyCode::Char('p') => app.open_plugins_toggle(),
+        // Section Extensions : gestionnaire de marketplaces.
+        KeyCode::Char('g') => app.open_marketplaces(),
 
         // Ménage des sessions (focus Sessions dans Browse).
         KeyCode::Char('d') | KeyCode::Delete => app.request_delete(),
@@ -449,6 +468,81 @@ fn handle_hooks_editor_key(app: &mut App, key: KeyEvent) {
     match deferred {
         Some(Deferred::Save) => app.hooks_save(),
         Some(Deferred::Cancel) => app.hooks_cancel(),
+        None => {}
+    }
+}
+
+fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
+    use crate::tui::marketplaces::MktMode;
+    enum Deferred {
+        Add(String),
+        Update,
+        Remove,
+        Cancel,
+    }
+    // `busy` lu avant d'emprunter `app.marketplaces` (évite le conflit d'emprunt).
+    let busy = app.mkt_job.is_some();
+    let deferred: Option<Deferred>;
+    {
+        let Some(m) = app.marketplaces.as_mut() else {
+            return;
+        };
+        if m.confirm_remove {
+            deferred = match key.code {
+                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                | KeyCode::Enter => Some(Deferred::Remove),
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    m.confirm_remove = false;
+                    None
+                }
+                _ => None,
+            };
+        } else if m.mode == MktMode::AddInput {
+            deferred = match key.code {
+                KeyCode::Esc => {
+                    m.cancel_add();
+                    None
+                }
+                KeyCode::Enter => Some(Deferred::Add(m.input.clone())),
+                KeyCode::Backspace => {
+                    m.input.pop();
+                    None
+                }
+                KeyCode::Char(c) => {
+                    m.input.push(c);
+                    None
+                }
+                _ => None,
+            };
+        } else {
+            deferred = match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    m.move_sel(-1);
+                    None
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    m.move_sel(1);
+                    None
+                }
+                KeyCode::Char('a') if !busy => {
+                    m.begin_add();
+                    None
+                }
+                KeyCode::Char('u') if !busy => Some(Deferred::Update),
+                KeyCode::Char('d') if !busy => {
+                    m.begin_remove();
+                    None
+                }
+                KeyCode::Esc => Some(Deferred::Cancel),
+                _ => None,
+            };
+        }
+    }
+    match deferred {
+        Some(Deferred::Add(src)) => app.mkt_begin_add(&src),
+        Some(Deferred::Update) => app.mkt_begin_update(),
+        Some(Deferred::Remove) => app.mkt_remove_confirmed(),
+        Some(Deferred::Cancel) => app.marketplaces_cancel(),
         None => {}
     }
 }

@@ -6,18 +6,34 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use claudine_core::{
-    apply as import_apply, decode_encoded_to_path, discover_homes, dry_run as import_dry_run,
-    empty_trash, export, find_in_session, list_trash, move_session, purge_trash_item,
-    read_extensions, read_hook_groups, read_user_mcp_servers, restore_trash_entry, scan_projects,
-    set_plugin_enabled, trash_project, trash_session, write_hooks, write_user_mcp_servers,
-    ClaudeHome, ClaudineConfig, Extensions, ExportOptions, ImportOptions, Project, RemapTable,
-    SessionMeta,
+    add_marketplace, apply as import_apply, decode_encoded_to_path, discover_homes,
+    dry_run as import_dry_run, empty_trash, export, find_in_session, list_trash, move_session,
+    purge_trash_item, read_extensions, read_hook_groups, read_marketplaces,
+    read_user_mcp_servers, remove_marketplace, restore_trash_entry, scan_projects,
+    set_plugin_enabled, trash_project, trash_session, update_marketplace, write_hooks,
+    write_user_mcp_servers, ClaudeHome, ClaudineConfig, Extensions, ExportOptions, ImportOptions,
+    MarketplaceSource, Project, RemapTable, SessionMeta,
 };
 use serde_json::Value;
 
 use crate::tui::hooks_editor::HooksEditor;
+use crate::tui::marketplaces::MarketplacesManager;
 use crate::tui::mcp_editor::McpEditor;
 use crate::tui::settings_form::SettingsForm;
+
+/// Résultat d'une opération marketplace exécutée en arrière-plan (message prêt à afficher).
+pub struct MktOutcome {
+    pub result: std::result::Result<String, String>,
+}
+
+/// Un job marketplace en cours (clone/pull) dans un thread.
+pub struct MktJob {
+    /// Libellé affiché dans le spinner (utilisé par le rendu, Task 5).
+    #[allow(dead_code)]
+    pub label: String,
+    pub frame: u8,
+    pub rx: std::sync::mpsc::Receiver<MktOutcome>,
+}
 
 /// Sections de premier niveau, sélectionnables avec Tab / 1,2,3,4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -231,6 +247,10 @@ pub struct App {
     pub hooks_editor: Option<HooksEditor>,
     /// Éditeur de serveurs MCP (modal) ; `None` = fermé.
     pub mcp_editor: Option<McpEditor>,
+    /// Gestionnaire de marketplaces (modal) ; `None` = fermé.
+    pub marketplaces: Option<MarketplacesManager>,
+    /// Job marketplace en cours d'exécution en arrière-plan ; `None` = aucun.
+    pub mkt_job: Option<MktJob>,
     /// Modal de bascule des plugins (activer/désactiver) ; `None` = fermé.
     pub plugins_toggle: Option<PluginsToggle>,
     pub focus: Focus,
@@ -329,6 +349,8 @@ impl App {
             import: None,
             hooks_editor: None,
             mcp_editor: None,
+            marketplaces: None,
+            mkt_job: None,
             plugins_toggle: None,
             focus: Focus::Projects,
             project_idx: 0,
@@ -1094,6 +1116,113 @@ impl App {
             }
             Err(e) => self.status = Some(format!("Échec enregistrement MCP : {e}")),
         }
+    }
+
+    // --- Gestionnaire de marketplaces ---
+
+    /// Ouvre le gestionnaire de marketplaces du home actif (depuis Extensions).
+    pub fn open_marketplaces(&mut self) {
+        if self.section != Section::Extensions {
+            return;
+        }
+        let items = read_marketplaces(self.home()).unwrap_or_default();
+        self.marketplaces = Some(MarketplacesManager::new(items));
+    }
+
+    pub fn marketplaces_cancel(&mut self) {
+        self.marketplaces = None;
+    }
+
+    /// Lance l'ajout d'une marketplace en arrière-plan. Source illisible → statut d'erreur.
+    pub fn mkt_begin_add(&mut self, input: &str) {
+        if let Some(m) = self.marketplaces.as_mut() {
+            m.cancel_add();
+        }
+        let Some(source) = MarketplaceSource::parse(input) else {
+            self.status = Some(format!("Source non reconnue : {input}"));
+            return;
+        };
+        let home = self.home().clone();
+        let label = format!("ajout de {input}");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = add_marketplace(&home, source)
+                .map(|mp| format!("marketplace « {} » ajoutée", mp.name))
+                .map_err(|e| e.to_string());
+            let _ = tx.send(MktOutcome { result });
+        });
+        self.mkt_job = Some(MktJob { label, frame: 0, rx });
+    }
+
+    /// Lance la mise à jour de la marketplace sélectionnée en arrière-plan.
+    pub fn mkt_begin_update(&mut self) {
+        let Some(name) = self.marketplaces.as_ref().and_then(|m| m.selected_name()) else {
+            return;
+        };
+        let home = self.home().clone();
+        let label = format!("mise à jour de {name}");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = update_marketplace(&home, &name)
+                .map(|()| format!("marketplace « {name} » mise à jour"))
+                .map_err(|e| e.to_string());
+            let _ = tx.send(MktOutcome { result });
+        });
+        self.mkt_job = Some(MktJob { label, frame: 0, rx });
+    }
+
+    /// Retire la marketplace sélectionnée (opération locale, synchrone).
+    pub fn mkt_remove_confirmed(&mut self) {
+        let name = {
+            let Some(m) = self.marketplaces.as_mut() else {
+                return;
+            };
+            m.confirm_remove = false;
+            match m.selected_name() {
+                Some(n) => n,
+                None => return,
+            }
+        };
+        let home = self.home().clone();
+        match remove_marketplace(&home, &name) {
+            Ok(()) => {
+                let items = read_marketplaces(&home).unwrap_or_default();
+                if let Some(m) = self.marketplaces.as_mut() {
+                    m.set_items(items);
+                }
+                self.status = Some(format!("marketplace « {name} » retirée"));
+            }
+            Err(e) => self.status = Some(format!("Échec retrait : {e}")),
+        }
+    }
+
+    pub fn mkt_job_active(&self) -> bool {
+        self.mkt_job.is_some()
+    }
+
+    /// Avance le spinner et applique le résultat du job s'il est arrivé.
+    pub fn tick_mkt_job(&mut self) {
+        let Some(job) = self.mkt_job.as_mut() else {
+            return;
+        };
+        job.frame = job.frame.wrapping_add(1);
+        let outcome = match job.rx.try_recv() {
+            Ok(o) => o,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => MktOutcome {
+                result: Err("le job s'est interrompu".to_string()),
+            },
+        };
+        self.mkt_job = None;
+        let home = self.home().clone();
+        let items = read_marketplaces(&home).unwrap_or_default();
+        if let Some(m) = self.marketplaces.as_mut() {
+            m.set_items(items);
+        }
+        self.status = Some(match outcome.result {
+            Ok(msg) => msg,
+            Err(e) => format!("Échec : {e}"),
+        });
     }
 
     // --- Modal de bascule des plugins ---
@@ -2828,6 +2957,84 @@ mod tests {
 
         let ext = claudine_core::read_extensions(app.home());
         assert!(!ext.plugins.iter().find(|p| p.name == "foo@m").unwrap().enabled);
+    }
+
+    #[test]
+    fn marketplaces_open_lists_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        // Un registre minimal sur disque.
+        let reg = r#"{"m1":{"source":{"source":"github","repo":"o/r"},"installLocation":"/x/m1","lastUpdated":"2026-01-01T00:00:00.000Z"}}"#;
+        let p = base.join("plugins").join("known_marketplaces.json");
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, reg).unwrap();
+
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        app.set_section(Section::Extensions);
+        app.open_marketplaces();
+        let m = app.marketplaces.as_ref().unwrap();
+        assert_eq!(m.items.len(), 1);
+        assert_eq!(m.items[0].name, "m1");
+    }
+
+    #[test]
+    fn marketplaces_remove_confirmed_is_synchronous() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        let reg = r#"{"gone":{"source":{"source":"github","repo":"o/r"},"installLocation":"/x/gone","lastUpdated":"2026-01-01T00:00:00.000Z"}}"#;
+        let p = base.join("plugins").join("known_marketplaces.json");
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, reg).unwrap();
+        // Dossier de la marketplace à supprimer.
+        fs::create_dir_all(base.join("plugins").join("marketplaces").join("gone")).unwrap();
+
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        app.set_section(Section::Extensions);
+        app.open_marketplaces();
+        app.marketplaces.as_mut().unwrap().begin_remove();
+        app.mkt_remove_confirmed();
+
+        assert!(app.marketplaces.as_ref().unwrap().items.is_empty());
+        assert!(!base.join("plugins").join("marketplaces").join("gone").exists());
+    }
+
+    #[test]
+    fn mkt_job_tick_applies_outcome_and_clears() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        app.set_section(Section::Extensions);
+        app.open_marketplaces();
+
+        // Injecte un job déjà terminé.
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(MktOutcome { result: Ok("ajoutée".to_string()) }).unwrap();
+        app.mkt_job = Some(MktJob { label: "ajout".into(), frame: 0, rx });
+        assert!(app.mkt_job_active());
+
+        app.tick_mkt_job();
+        assert!(!app.mkt_job_active(), "job effacé après réception");
+        assert_eq!(app.status.as_deref(), Some("ajoutée"));
+    }
+
+    #[test]
+    fn mkt_begin_add_rejects_unparseable_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        fs::create_dir_all(base.join("projects")).unwrap();
+        let mut app = App::with_homes(vec![ClaudeHome::from_base(base)]);
+        app.set_section(Section::Extensions);
+        app.open_marketplaces();
+        app.marketplaces.as_mut().unwrap().begin_add();
+
+        app.mkt_begin_add("source bidon !!");
+        assert!(app.mkt_job.is_none(), "aucun job lancé");
+        assert!(app.status.as_deref().unwrap().contains("non reconnue"));
+        // Retour en mode liste.
+        assert_eq!(app.marketplaces.as_ref().unwrap().mode, crate::tui::marketplaces::MktMode::List);
     }
 }
 
