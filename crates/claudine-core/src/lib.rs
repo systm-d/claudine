@@ -14,6 +14,7 @@ pub mod housekeeping;
 pub mod search;
 pub mod settings;
 pub mod extensions;
+pub mod marketplaces;
 
 pub use config::{config_path, merge_registered, ClaudineConfig, RegisteredHome};
 pub use error::{CoreError, Report, Result};
@@ -33,6 +34,10 @@ pub use search::find_in_session;
 pub use settings::{settings_catalog, FieldKind, FieldSpec, SettingsDoc};
 pub use extensions::{
     read_extensions, read_hook_groups, write_hooks, set_plugin_enabled, mcp_config_path, read_user_mcp_servers, write_user_mcp_servers, Extensions, HookCommand, HookEntry, HookGroup, McpEntry, McpServer, McpTransport, PluginEntry,
+};
+pub use marketplaces::{
+    iso8601_utc, read_marketplace_manifest, read_marketplaces, Marketplace, MarketplaceManifest,
+    MarketplaceSource, PluginManifestEntry,
 };
 
 #[cfg(test)]
