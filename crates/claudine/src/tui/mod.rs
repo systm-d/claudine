@@ -479,6 +479,10 @@ fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
         Update,
         Remove,
         Cancel,
+        OpenCatalog,
+        CatalogClose,
+        ToggleEnable,
+        Uninstall,
     }
     // `busy` lu avant d'emprunter `app.marketplaces` (évite le conflit d'emprunt).
     let busy = app.mkt_job.is_some();
@@ -487,7 +491,38 @@ fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
         let Some(m) = app.marketplaces.as_mut() else {
             return;
         };
-        if m.confirm_remove {
+        if let Some(c) = m.catalog.as_mut() {
+            // Niveau catalogue.
+            if c.confirm_uninstall {
+                deferred = match key.code {
+                    KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y')
+                    | KeyCode::Char('Y') | KeyCode::Enter => Some(Deferred::Uninstall),
+                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                        c.confirm_uninstall = false;
+                        None
+                    }
+                    _ => None,
+                };
+            } else {
+                deferred = match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        c.move_sel(-1);
+                        None
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        c.move_sel(1);
+                        None
+                    }
+                    KeyCode::Char(' ') => Some(Deferred::ToggleEnable),
+                    KeyCode::Char('d') => {
+                        c.begin_uninstall();
+                        None
+                    }
+                    KeyCode::Esc => Some(Deferred::CatalogClose),
+                    _ => None,
+                };
+            }
+        } else if m.confirm_remove {
             deferred = match key.code {
                 KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
                 | KeyCode::Enter => Some(Deferred::Remove),
@@ -533,6 +568,7 @@ fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
                     m.begin_remove();
                     None
                 }
+                KeyCode::Enter => Some(Deferred::OpenCatalog),
                 KeyCode::Esc => Some(Deferred::Cancel),
                 _ => None,
             };
@@ -543,6 +579,10 @@ fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
         Some(Deferred::Update) => app.mkt_begin_update(),
         Some(Deferred::Remove) => app.mkt_remove_confirmed(),
         Some(Deferred::Cancel) => app.marketplaces_cancel(),
+        Some(Deferred::OpenCatalog) => app.open_catalog(),
+        Some(Deferred::CatalogClose) => app.catalog_close(),
+        Some(Deferred::ToggleEnable) => app.catalog_toggle_enable(),
+        Some(Deferred::Uninstall) => app.catalog_uninstall_confirmed(),
         None => {}
     }
 }
