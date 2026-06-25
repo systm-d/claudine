@@ -28,8 +28,7 @@ pub struct MktOutcome {
 
 /// Un job marketplace en cours (clone/pull) dans un thread.
 pub struct MktJob {
-    /// Libellé affiché dans le spinner (utilisé par le rendu, Task 5).
-    #[allow(dead_code)]
+    /// Libellé affiché dans le spinner.
     pub label: String,
     pub frame: u8,
     pub rx: std::sync::mpsc::Receiver<MktOutcome>,
