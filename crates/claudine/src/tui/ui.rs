@@ -16,6 +16,7 @@ use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
 use crate::tui::mcp_editor::{McpEdit, McpLevel, McpRow};
 use claudine_core::{scan_projects, MarketplaceSource, McpTransport};
 use crate::tui::marketplaces::MktMode;
+use crate::tui::marketplaces::PluginCatalog;
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
@@ -910,7 +911,7 @@ fn render_help(f: &mut Frame, area: Rect) {
     let rows = [
         ("1 / 2 / 3 / 4", "Projets / Mémoire / Config / Extensions"),
         ("Tab", "section suivante"),
-        ("Extensions", "hooks (Enter) · plugins (p) · MCP (m) · marketplaces (g) ; E édite settings.json"),
+        ("Extensions", "hooks (Enter) · plugins (p) · MCP (m) · marketplaces (g → Enter: catalogue) ; E édite settings.json"),
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
@@ -1681,6 +1682,10 @@ fn render_marketplaces(app: &App, f: &mut Frame, area: Rect) {
     let Some(m) = &app.marketplaces else {
         return;
     };
+    if let Some(c) = &m.catalog {
+        render_plugin_catalog(c, f, area);
+        return;
+    }
     let popup = centered_rect(78, 68, area);
     f.render_widget(Clear, popup);
 
@@ -1753,6 +1758,72 @@ fn render_marketplaces(app: &App, f: &mut Frame, area: Rect) {
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             )));
         }
+    }
+
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+/// Modal du catalogue de plugins d'une marketplace (2ᵉ niveau).
+fn render_plugin_catalog(c: &PluginCatalog, f: &mut Frame, area: Rect) {
+    let popup = centered_rect(78, 72, area);
+    f.render_widget(Clear, popup);
+
+    let hint = if c.confirm_uninstall {
+        " o/n confirmer "
+    } else {
+        " Espace activer/désact. · d désinstaller · Esc retour "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            format!(" Plugins de « {} » ", c.marketplace),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(hint).right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = Vec::new();
+    if c.entries.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (aucun plugin dans ce manifeste)",
+            Style::default().fg(DIM),
+        )));
+    }
+    for (i, e) in c.entries.iter().enumerate() {
+        let sel = i == c.idx;
+        let state = if e.installed {
+            if e.enabled {
+                "[installé][activé]"
+            } else {
+                "[installé]"
+            }
+        } else {
+            "(non installé)"
+        };
+        let label = format!("{} {}  {}", if sel { "▶" } else { " " }, e.name, state);
+        let style = if sel { selection_style(true) } else { Style::default() };
+        lines.push(Line::from(Span::styled(label, style)));
+        if sel {
+            if let Some(d) = &e.description {
+                lines.push(Line::from(Span::styled(
+                    format!("     {d}"),
+                    Style::default().fg(DIM),
+                )));
+            }
+        }
+    }
+
+    if c.confirm_uninstall {
+        lines.push(Line::from(""));
+        let name = c.selected_name().unwrap_or_default();
+        lines.push(Line::from(Span::styled(
+            format!("  Désinstaller « {name} » ? (o/n)"),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        )));
     }
 
     f.render_widget(Paragraph::new(Text::from(lines)), inner);
