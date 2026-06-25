@@ -148,6 +148,14 @@ impl PluginCatalog {
             self.confirm_uninstall = true;
         }
     }
+
+    /// Marque le plugin nommé comme installé + activé (après un job d'install réussi).
+    pub fn mark_installed(&mut self, plugin: &str) {
+        if let Some(e) = self.entries.iter_mut().find(|e| e.name == plugin) {
+            e.installed = true;
+            e.enabled = true;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -212,7 +220,7 @@ mod tests {
     use claudine_core::{PluginEntry, PluginManifestEntry};
 
     fn pm(name: &str, desc: Option<&str>) -> PluginManifestEntry {
-        PluginManifestEntry { name: name.into(), description: desc.map(|s| s.to_string()) }
+        PluginManifestEntry { name: name.into(), description: desc.map(|s| s.to_string()), source: None }
     }
 
     #[test]
@@ -247,5 +255,18 @@ mod tests {
     fn manager_starts_without_catalog() {
         let m = MarketplacesManager::new(vec![]);
         assert!(m.catalog.is_none());
+    }
+
+    #[test]
+    fn catalog_mark_installed_sets_flags() {
+        let manifest = vec![pm("a", None), pm("b", None)];
+        let installed = vec![]; // rien d'installé au départ
+        let mut cat = PluginCatalog::new("m".into(), &manifest, &installed);
+        assert!(!cat.entries[0].installed);
+        cat.mark_installed("a");
+        assert!(cat.entries[0].installed && cat.entries[0].enabled);
+        // L'autre entrée reste intacte ; un nom inconnu est ignoré.
+        assert!(!cat.entries[1].installed);
+        cat.mark_installed("absent");
     }
 }

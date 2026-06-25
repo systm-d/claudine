@@ -139,11 +139,26 @@ pub struct MarketplaceManifest {
     pub plugins: Vec<PluginManifestEntry>,
 }
 
-/// Entrée plugin du manifeste (minimal pour 2c-1 ; étendu en 2c-2).
+/// Source d'installation d'un plugin (champ `source` du manifeste).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginSource {
+    /// Chaîne `"./plugins/X"` : sous-dossier de la marketplace clonée (pas de réseau).
+    RelativePath { path: String },
+    /// `url` / `git-subdir` / `github` : clone git épinglé à un commit, sous-dossier optionnel.
+    Git {
+        url: String,
+        commit: String,
+        subdir: Option<String>,
+    },
+}
+
+/// Entrée plugin du manifeste.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginManifestEntry {
     pub name: String,
     pub description: Option<String>,
+    /// `None` si la forme de `source` n'est pas reconnue (plugin non installable).
+    pub source: Option<PluginSource>,
 }
 
 fn marketplaces_dir(home: &ClaudeHome) -> PathBuf {
@@ -203,6 +218,32 @@ fn manifest_path(dir: &Path) -> PathBuf {
     dir.join(".claude-plugin").join("marketplace.json")
 }
 
+/// Analyse la valeur du champ `source` d'un plugin (chaîne relative ou objet typé).
+fn parse_plugin_source(v: &Value) -> Option<PluginSource> {
+    if let Some(s) = v.as_str() {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        return Some(PluginSource::RelativePath { path: s.to_string() });
+    }
+    let o = v.as_object()?;
+    match o.get("source").and_then(|s| s.as_str())? {
+        // `url` et `git-subdir` partagent la même mécanique : clone + checkout `sha`.
+        "url" | "git-subdir" => Some(PluginSource::Git {
+            url: o.get("url")?.as_str()?.to_string(),
+            commit: o.get("sha")?.as_str()?.to_string(),
+            subdir: o.get("path").and_then(|p| p.as_str()).map(String::from),
+        }),
+        "github" => Some(PluginSource::Git {
+            url: format!("https://github.com/{}.git", o.get("repo")?.as_str()?),
+            commit: o.get("commit")?.as_str()?.to_string(),
+            subdir: None,
+        }),
+        _ => None,
+    }
+}
+
 fn parse_manifest(v: &Value) -> Option<MarketplaceManifest> {
     let o = v.as_object()?;
     let name = o.get("name")?.as_str()?.to_string();
@@ -218,6 +259,7 @@ fn parse_manifest(v: &Value) -> Option<MarketplaceManifest> {
             Some(PluginManifestEntry {
                 name: po.get("name")?.as_str()?.to_string(),
                 description: po.get("description").and_then(|d| d.as_str()).map(String::from),
+                source: po.get("source").and_then(parse_plugin_source),
             })
         })
         .collect();
@@ -316,6 +358,39 @@ mod git {
         finish(c, "git clone")
     }
 
+    /// `git clone -- <url> <dest>` (historique **complet**, sans `--depth`) afin de
+    /// pouvoir extraire ensuite n'importe quel commit épinglé. Durci comme `clone`.
+    pub fn clone_full(url: &str, dest: &Path) -> Result<()> {
+        if url.starts_with('-') {
+            return Err(CoreError::Marketplace(format!("url invalide : {url}")));
+        }
+        let mut c = Command::new("git");
+        c.arg("-c")
+            .arg("protocol.ext.allow=never")
+            .arg("clone")
+            .arg("--")
+            .arg(url)
+            .arg(dest);
+        c.env("GIT_TERMINAL_PROMPT", "0");
+        finish(c, "git clone")
+    }
+
+    /// `git -C <dir> checkout --detach <commit>` : positionne l'arbre de travail
+    /// sur le commit épinglé. Refuse un commit ressemblant à une option.
+    pub fn checkout(dir: &Path, commit: &str) -> Result<()> {
+        if commit.starts_with('-') {
+            return Err(CoreError::Marketplace(format!("commit invalide : {commit}")));
+        }
+        let mut c = Command::new("git");
+        c.arg("-C")
+            .arg(dir)
+            .arg("checkout")
+            .arg("--detach")
+            .arg(commit);
+        c.env("GIT_TERMINAL_PROMPT", "0");
+        finish(c, "git checkout")
+    }
+
     /// `git -C <dir> pull --ff-only`.
     pub fn pull(dir: &Path) -> Result<()> {
         let mut c = Command::new("git");
@@ -402,6 +477,202 @@ pub fn remove_marketplace(home: &ClaudeHome, name: &str) -> Result<()> {
     let mut doc = SettingsDoc::load(&path)?;
     doc.unset(&[name]);
     doc.save(&path)
+}
+
+/// Lit `version` depuis `<src>/.claude-plugin/plugin.json` (absent → None).
+fn read_plugin_version(src: &Path) -> Option<String> {
+    let p = src.join(".claude-plugin").join("plugin.json");
+    let content = std::fs::read_to_string(&p).ok()?;
+    let v: Value = serde_json::from_str(&content).ok()?;
+    v.get("version").and_then(|x| x.as_str()).map(String::from)
+}
+
+/// Copie récursive de `src` vers `dest` (fichiers + dossiers ; liens symboliques ignorés).
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
+    std::fs::create_dir_all(dest).map_err(|e| CoreError::io(dest, e))?;
+    for entry in std::fs::read_dir(src).map_err(|e| CoreError::io(src, e))? {
+        let entry = entry.map_err(|e| CoreError::io(src, e))?;
+        let from = entry.path();
+        let to = dest.join(entry.file_name());
+        let ft = entry.file_type().map_err(|e| CoreError::io(&from, e))?;
+        if ft.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else if ft.is_file() {
+            std::fs::copy(&from, &to).map_err(|e| CoreError::io(&to, e))?;
+        }
+    }
+    Ok(())
+}
+
+/// Installe un plugin (portée user) depuis le catalogue d'une marketplace :
+/// matérialise ses fichiers dans `cache/<mkt>/<plugin>/<version>/`, écrit
+/// `installed_plugins.json` et l'auto-active. Idempotent (réécrit la version).
+pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Result<()> {
+    if !is_safe_name(marketplace) {
+        return Err(CoreError::Marketplace(format!(
+            "nom de marketplace invalide : {marketplace}"
+        )));
+    }
+    if !is_safe_name(plugin) {
+        return Err(CoreError::Marketplace(format!("nom de plugin invalide : {plugin}")));
+    }
+
+    // 1. Localiser l'entrée du plugin et sa source.
+    let manifest = read_marketplace_manifest(home, marketplace)?;
+    let source = manifest
+        .plugins
+        .iter()
+        .find(|p| p.name == plugin)
+        .ok_or_else(|| {
+            CoreError::Marketplace(format!("plugin introuvable au catalogue : {plugin}@{marketplace}"))
+        })?
+        .source
+        .clone()
+        .ok_or_else(|| {
+            CoreError::Marketplace(format!("source de plugin non gérée : {plugin}@{marketplace}"))
+        })?;
+
+    let cache_root = home.plugins_dir().join("cache");
+
+    // 2. Matérialiser la source dans `src` (`temp` = à nettoyer si clone).
+    let (src, temp): (PathBuf, Option<PathBuf>) = match &source {
+        PluginSource::RelativePath { path } => {
+            let rel = path.trim_start_matches("./");
+            if rel.is_empty() || rel.split('/').any(|c| c == ".." || c.is_empty()) {
+                return Err(CoreError::Marketplace(format!("chemin de plugin invalide : {path}")));
+            }
+            let mkt_dir = marketplaces_dir(home).join(marketplace);
+            let dir = mkt_dir.join(rel);
+            if !dir.starts_with(&mkt_dir) || !dir.is_dir() {
+                return Err(CoreError::Marketplace(format!(
+                    "dossier de plugin introuvable : {}",
+                    dir.display()
+                )));
+            }
+            // I1 : la source pourrait être un lien symbolique pointant hors de la marketplace.
+            // On canonicalise les deux chemins pour comparer les cibles réelles.
+            let canon_mkt = std::fs::canonicalize(&mkt_dir).map_err(|e| CoreError::io(&mkt_dir, e))?;
+            let canon_dir = std::fs::canonicalize(&dir).map_err(|e| CoreError::io(&dir, e))?;
+            if !canon_dir.starts_with(&canon_mkt) {
+                return Err(CoreError::Marketplace(
+                    "dossier de plugin hors marketplace".to_string(),
+                ));
+            }
+            (canon_dir, None)
+        }
+        PluginSource::Git { url, commit, subdir } => {
+            std::fs::create_dir_all(&cache_root).map_err(|e| CoreError::io(&cache_root, e))?;
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let temp = cache_root.join(format!("temp_git_{ts}"));
+            if temp.exists() {
+                let _ = std::fs::remove_dir_all(&temp);
+            }
+            // Clone complet + checkout du commit épinglé ; nettoie le temp si échec.
+            if let Err(e) = git::clone_full(url, &temp).and_then(|()| git::checkout(&temp, commit)) {
+                let _ = std::fs::remove_dir_all(&temp);
+                return Err(e);
+            }
+            // Sous-dossier optionnel, confiné sous le temp.
+            let src = match subdir {
+                Some(sd) => {
+                    let sd = sd.trim_start_matches("./");
+                    if sd.split('/').any(|c| c == "..") {
+                        let _ = std::fs::remove_dir_all(&temp);
+                        return Err(CoreError::Marketplace(format!("sous-dossier invalide : {sd}")));
+                    }
+                    temp.join(sd)
+                }
+                None => temp.clone(),
+            };
+            if !src.starts_with(&temp) || !src.is_dir() {
+                let _ = std::fs::remove_dir_all(&temp);
+                return Err(CoreError::Marketplace(
+                    "sous-dossier de plugin introuvable".to_string(),
+                ));
+            }
+            // I1 : canonicaliser pour rejeter un éventuel symlink hors du clone temporaire.
+            let canon_temp = match std::fs::canonicalize(&temp) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = std::fs::remove_dir_all(&temp);
+                    return Err(CoreError::io(&temp, e));
+                }
+            };
+            let canon_src = match std::fs::canonicalize(&src) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = std::fs::remove_dir_all(&temp);
+                    return Err(CoreError::io(&src, e));
+                }
+            };
+            if !canon_src.starts_with(&canon_temp) {
+                let _ = std::fs::remove_dir_all(&temp);
+                return Err(CoreError::Marketplace(
+                    "sous-dossier de plugin hors clone".to_string(),
+                ));
+            }
+            (canon_src, Some(temp))
+        }
+    };
+
+    // 3. Version (depuis plugin.json), sinon "unknown".
+    // La version est non-fiable (issue d'un plugin.json tiers) ; elle ne doit pas
+    // composer un chemin d'échappement. On la remplace par "unknown" si elle n'est
+    // pas un nom sûr (pas de séparateur de chemin ni de `..`).
+    let version = {
+        let v = read_plugin_version(&src).unwrap_or_else(|| "unknown".to_string());
+        if is_safe_name(&v) { v } else { "unknown".to_string() }
+    };
+
+    // 4. Copier vers cache/<mkt>/<plugin>/<version>/ (confiné, idempotent).
+    let copy_result = (|| -> Result<PathBuf> {
+        let dest = cache_root.join(marketplace).join(plugin).join(&version);
+        // Garde lexicale ET composants : rejette tout `..` dans le chemin construit.
+        if !dest.starts_with(&cache_root)
+            || dest.components().any(|c| c == std::path::Component::ParentDir)
+        {
+            return Err(CoreError::Marketplace("destination hors cache".to_string()));
+        }
+        if dest.exists() {
+            std::fs::remove_dir_all(&dest).map_err(|e| CoreError::io(&dest, e))?;
+        }
+        copy_dir_recursive(&src, &dest)?;
+        Ok(dest)
+    })();
+    if let Some(t) = &temp {
+        let _ = std::fs::remove_dir_all(t);
+    }
+    let dest = copy_result?;
+
+    // 5. Écrire l'entrée scope user d'installed_plugins.json.
+    let key = format!("{plugin}@{marketplace}");
+    let installed_path = home.plugins_dir().join("installed_plugins.json");
+    let mut doc = SettingsDoc::load(&installed_path)?;
+    if doc.get(&["version"]).is_none() {
+        doc.set(&["version"], Value::Number(2u64.into()));
+    }
+    let now = iso8601_utc(SystemTime::now());
+    let mut entry = Map::new();
+    entry.insert("scope".into(), Value::String("user".into()));
+    entry.insert("installPath".into(), Value::String(dest.to_string_lossy().into_owned()));
+    entry.insert("version".into(), Value::String(version.clone()));
+    entry.insert("installedAt".into(), Value::String(now.clone()));
+    entry.insert("lastUpdated".into(), Value::String(now));
+    let mut arr: Vec<Value> = doc
+        .get(&["plugins", key.as_str()])
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    arr.retain(|x| x.get("scope").and_then(|s| s.as_str()) != Some("user"));
+    arr.push(Value::Object(entry));
+    doc.set(&["plugins", key.as_str()], Value::Array(arr));
+    doc.save(&installed_path)?;
+
+    // 6. Auto-activer (réutilise extensions.rs).
+    crate::extensions::set_plugin_enabled(home, &key, true)
 }
 
 /// Met à jour une marketplace (`git pull`) et rafraîchit `lastUpdated`.
@@ -650,6 +921,47 @@ mod tests {
         assert!(read_marketplaces(&home).unwrap().is_empty());
     }
 
+    /// Renvoie le SHA HEAD d'un dépôt.
+    fn head_sha(repo: &StdPath) -> String {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .expect("git rev-parse");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn git_clone_full_then_checkout_pins_commit() {
+        // Dépôt avec 2 commits : v1 puis v2 d'un même fichier.
+        let repo = tempfile::tempdir().unwrap();
+        let root = repo.path();
+        git(&["init", "-q", "-b", "main"], root);
+        git(&["config", "user.email", "t@t"], root);
+        git(&["config", "user.name", "t"], root);
+        std::fs::write(root.join("f.txt"), "v1").unwrap();
+        git(&["add", "-A"], root);
+        git(&["commit", "-q", "-m", "c1"], root);
+        let sha1 = head_sha(root);
+        std::fs::write(root.join("f.txt"), "v2").unwrap();
+        git(&["add", "-A"], root);
+        git(&["commit", "-q", "-m", "c2"], root);
+
+        let dest = tempfile::tempdir().unwrap();
+        let dest = dest.path().join("clone");
+        super::git::clone_full(&root.to_string_lossy(), &dest).unwrap();
+        super::git::checkout(&dest, &sha1).unwrap();
+        assert_eq!(std::fs::read_to_string(dest.join("f.txt")).unwrap(), "v1");
+
+        // Commit inexistant → Err.
+        assert!(super::git::checkout(&dest, "0000000000000000000000000000000000000000").is_err());
+        // URL/commit ressemblant à une option → Err (durcissement).
+        assert!(super::git::clone_full("--upload-pack=evil", &dest).is_err());
+        assert!(super::git::checkout(&dest, "-x").is_err());
+    }
+
     #[test]
     fn add_marketplace_blocks_ext_transport() {
         // `protocol.ext.allow=never` doit faire échouer le transport ext:: (sinon RCE).
@@ -666,5 +978,286 @@ mod tests {
         let dir = home.plugins_dir().join("marketplaces").join("orphan");
         std::fs::create_dir_all(&dir).unwrap();
         assert!(update_marketplace(&home, "orphan").is_err());
+    }
+
+    /// Écrit une marketplace clonée fictive avec un manifeste et un plugin relative-path.
+    fn seed_rel_marketplace(home: &ClaudeHome, mkt: &str, plugin: &str, version: Option<&str>) {
+        let mdir = home.plugins_dir().join("marketplaces").join(mkt);
+        // Manifeste avec une entrée relative-path.
+        let cp = mdir.join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        let manifest = format!(
+            r#"{{"name":"{mkt}","plugins":[{{"name":"{plugin}","description":"d","source":"./plugins/{plugin}"}}]}}"#
+        );
+        std::fs::write(cp.join("marketplace.json"), manifest).unwrap();
+        // Fichiers du plugin sous marketplaces/<mkt>/plugins/<plugin>/.
+        let pdir = mdir.join("plugins").join(plugin);
+        let pcp = pdir.join(".claude-plugin");
+        std::fs::create_dir_all(&pcp).unwrap();
+        let pj = match version {
+            Some(v) => format!(r#"{{"name":"{plugin}","version":"{v}"}}"#),
+            None => format!(r#"{{"name":"{plugin}"}}"#),
+        };
+        std::fs::write(pcp.join("plugin.json"), pj).unwrap();
+        std::fs::write(pdir.join("SKILL.md"), "hello").unwrap();
+    }
+
+    #[test]
+    fn install_plugin_relative_path_materializes_and_enables() {
+        let (_d, home) = home();
+        seed_rel_marketplace(&home, "m", "p", Some("1.2.3"));
+
+        install_plugin(&home, "m", "p").unwrap();
+
+        // Fichiers copiés sous cache/<mkt>/<plugin>/<version>/.
+        let dest = home.plugins_dir().join("cache/m/p/1.2.3");
+        assert!(dest.join("SKILL.md").is_file(), "fichier copié");
+        assert!(dest.join(".claude-plugin/plugin.json").is_file());
+
+        // Entrée installed_plugins.json (scope user, installPath, version).
+        let doc = SettingsDoc::load(&home.plugins_dir().join("installed_plugins.json")).unwrap();
+        let arr = doc.get(&["plugins", "p@m"]).and_then(|v| v.as_array()).cloned().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0].get("scope").and_then(|s| s.as_str()), Some("user"));
+        assert_eq!(arr[0].get("version").and_then(|s| s.as_str()), Some("1.2.3"));
+        assert_eq!(
+            arr[0].get("installPath").and_then(|s| s.as_str()),
+            Some(dest.to_string_lossy().as_ref())
+        );
+
+        // Auto-activé.
+        let sdoc = SettingsDoc::load(&home.settings_file()).unwrap();
+        assert_eq!(sdoc.get_bool(&["enabledPlugins", "p@m"]), Some(true));
+    }
+
+    #[test]
+    fn install_plugin_missing_version_uses_unknown() {
+        let (_d, home) = home();
+        seed_rel_marketplace(&home, "m", "p", None);
+        install_plugin(&home, "m", "p").unwrap();
+        assert!(home.plugins_dir().join("cache/m/p/unknown").join("SKILL.md").is_file());
+    }
+
+    #[test]
+    fn install_plugin_unknown_plugin_errors() {
+        let (_d, home) = home();
+        seed_rel_marketplace(&home, "m", "p", Some("1"));
+        assert!(install_plugin(&home, "m", "absent").is_err());
+        // Rien écrit.
+        assert!(!home.plugins_dir().join("installed_plugins.json").exists());
+    }
+
+    #[test]
+    fn install_plugin_rejects_dotdot_in_relative_source() {
+        let (_d, home) = home();
+        let mdir = home.plugins_dir().join("marketplaces").join("m");
+        let cp = mdir.join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        std::fs::write(
+            cp.join("marketplace.json"),
+            r#"{"name":"m","plugins":[{"name":"evil","source":"./../../etc"}]}"#,
+        )
+        .unwrap();
+        assert!(install_plugin(&home, "m", "evil").is_err());
+        assert!(!home.plugins_dir().join("cache").join("m").exists());
+    }
+
+    /// Dépôt git « source de plugin » avec plugin.json (version) + fichier, dans un
+    /// sous-dossier optionnel. Renvoie (tempdir, chemin, sha HEAD).
+    fn make_plugin_repo(subdir: Option<&str>, version: &str) -> (tempfile::TempDir, String, String) {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().to_path_buf();
+        git(&["init", "-q", "-b", "main"], &root);
+        git(&["config", "user.email", "t@t"], &root);
+        git(&["config", "user.name", "t"], &root);
+        let base = match subdir {
+            Some(s) => root.join(s),
+            None => root.clone(),
+        };
+        let cp = base.join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        std::fs::write(cp.join("plugin.json"), format!(r#"{{"name":"gp","version":"{version}"}}"#)).unwrap();
+        std::fs::write(base.join("SKILL.md"), "git-body").unwrap();
+        git(&["add", "-A"], &root);
+        git(&["commit", "-q", "-m", "init"], &root);
+        let sha = head_sha(&root);
+        (d, root.to_string_lossy().into_owned(), sha)
+    }
+
+    /// Écrit une marketplace fictive dont le plugin `gp` a une source git donnée.
+    fn seed_git_marketplace(home: &ClaudeHome, mkt: &str, source_json: &str) {
+        let cp = home.plugins_dir().join("marketplaces").join(mkt).join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        let manifest = format!(r#"{{"name":"{mkt}","plugins":[{{"name":"gp","source":{source_json}}}]}}"#);
+        std::fs::write(cp.join("marketplace.json"), manifest).unwrap();
+    }
+
+    #[test]
+    fn install_plugin_git_url_clones_and_pins() {
+        let (_repo, url, sha) = make_plugin_repo(None, "3.0.0");
+        let (_d, home) = home();
+        seed_git_marketplace(&home, "m", &format!(r#"{{"source":"url","url":"{url}","sha":"{sha}"}}"#));
+
+        install_plugin(&home, "m", "gp").unwrap();
+
+        let dest = home.plugins_dir().join("cache/m/gp/3.0.0");
+        assert_eq!(std::fs::read_to_string(dest.join("SKILL.md")).unwrap(), "git-body");
+        let sdoc = SettingsDoc::load(&home.settings_file()).unwrap();
+        assert_eq!(sdoc.get_bool(&["enabledPlugins", "gp@m"]), Some(true));
+        // Aucun dossier temporaire résiduel.
+        let temp_left = std::fs::read_dir(home.plugins_dir().join("cache"))
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with("temp_git_"));
+        assert!(!temp_left, "temp nettoyé");
+    }
+
+    #[test]
+    fn install_plugin_git_subdir_uses_subdirectory() {
+        let (_repo, url, sha) = make_plugin_repo(Some("plugins/gp"), "4.1.0");
+        let (_d, home) = home();
+        seed_git_marketplace(
+            &home,
+            "m",
+            &format!(r#"{{"source":"git-subdir","url":"{url}","path":"plugins/gp","sha":"{sha}"}}"#),
+        );
+
+        install_plugin(&home, "m", "gp").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(home.plugins_dir().join("cache/m/gp/4.1.0/SKILL.md")).unwrap(),
+            "git-body"
+        );
+    }
+
+    #[test]
+    fn install_plugin_git_bad_commit_cleans_temp_and_errors() {
+        let (_repo, url, _sha) = make_plugin_repo(None, "1.0.0");
+        let (_d, home) = home();
+        seed_git_marketplace(
+            &home,
+            "m",
+            &format!(r#"{{"source":"url","url":"{url}","sha":"0000000000000000000000000000000000000000"}}"#),
+        );
+
+        assert!(install_plugin(&home, "m", "gp").is_err());
+        // Pas d'entrée registre, pas de temp résiduel.
+        assert!(!home.plugins_dir().join("installed_plugins.json").exists());
+        let cache = home.plugins_dir().join("cache");
+        if cache.exists() {
+            let temp_left = std::fs::read_dir(&cache).unwrap().flatten().count();
+            assert_eq!(temp_left, 0, "ni temp ni cache résiduel");
+        }
+    }
+
+    // ── Tests de sécurité C1 + I1 ────────────────────────────────────────────
+
+    /// C1 : version provenant d'un plugin.json tiers avec traversée (`../../../../pwned`).
+    /// Le plugin doit s'installer dans `cache/<mkt>/<plugin>/unknown/` (fallback),
+    /// et rien ne doit être créé/supprimé hors du cache.
+    #[test]
+    fn install_plugin_malicious_version_falls_back_to_unknown() {
+        let (_d, home) = home();
+        seed_rel_marketplace(&home, "m", "p", Some("../../../../pwned"));
+
+        // Sentinelle hors cache : ce chemin ne doit PAS être touché.
+        let sentinel = home.plugins_dir().join("../../../../pwned");
+        // On crée le répertoire parent si nécessaire, mais on vérifie surtout que le test
+        // s'exécute sans panique et que l'installation atterrit dans unknown/.
+        let cache_root = home.plugins_dir().join("cache");
+
+        install_plugin(&home, "m", "p").unwrap();
+
+        // Le plugin doit atterrir dans unknown/, pas dans le chemin malicieux.
+        let good_dest = cache_root.join("m").join("p").join("unknown");
+        assert!(good_dest.join("SKILL.md").is_file(), "SKILL.md dans cache/.../unknown/");
+
+        // Le chemin malicieux (../../../../pwned) ne doit pas exister sous cache.
+        let bad_dest = cache_root.join("../../../../pwned");
+        assert!(!bad_dest.exists(), "aucun répertoire hors cache créé par la version malicieuse");
+
+        // Le sentinelle créé manuellement (si accessible) ne doit pas avoir été supprimé.
+        // (Il n'existe pas dans ce test car on ne le crée pas — vérification indirecte suffisante.)
+        let _ = sentinel; // utilisé pour documenter l'intention
+    }
+
+    /// I1 (Unix uniquement) : la source du plugin est un lien symbolique vers un répertoire
+    /// externe. `install_plugin` doit retourner Err et ne rien copier dans le cache.
+    #[cfg(unix)]
+    #[test]
+    fn install_plugin_rejects_symlinked_source_dir() {
+        use std::os::unix::fs::symlink;
+
+        let (_d, home) = home();
+
+        // Répertoire externe (cible du symlink) avec un fichier sensible.
+        let external = tempfile::tempdir().unwrap();
+        std::fs::write(external.path().join("secret.txt"), "top secret").unwrap();
+
+        // Marketplace avec manifeste pointant vers ./plugins/evil.
+        let mdir = home.plugins_dir().join("marketplaces").join("m");
+        let cp = mdir.join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        std::fs::write(
+            cp.join("marketplace.json"),
+            r#"{"name":"m","plugins":[{"name":"evil","description":"d","source":"./plugins/evil"}]}"#,
+        )
+        .unwrap();
+
+        // Le dossier plugins/evil est un symlink vers le répertoire externe.
+        let plugins_dir = mdir.join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        symlink(external.path(), plugins_dir.join("evil")).unwrap();
+
+        // L'installation doit échouer car la source est hors de la marketplace (symlink).
+        let result = install_plugin(&home, "m", "evil");
+        assert!(result.is_err(), "doit rejeter un source symlinké vers l'extérieur");
+
+        // Rien ne doit avoir été copié dans le cache.
+        let cache = home.plugins_dir().join("cache");
+        assert!(
+            !cache.join("m").join("evil").exists(),
+            "aucun fichier copié dans le cache"
+        );
+    }
+
+    #[test]
+    fn parse_manifest_extracts_plugin_sources() {
+        let json = serde_json::json!({
+            "name": "mkt",
+            "plugins": [
+                {"name":"rel","description":"d","source":"./plugins/rel"},
+                {"name":"u","source":{"source":"url","url":"https://x/r.git","sha":"abc","path":"sub"}},
+                {"name":"u2","source":{"source":"url","url":"https://x/r.git","sha":"def"}},
+                {"name":"gs","source":{"source":"git-subdir","url":"https://x/g.git","path":"p","ref":"v1","sha":"123"}},
+                {"name":"gh","source":{"source":"github","repo":"o/n","commit":"deadbeef","sha":"z"}},
+                {"name":"weird","source":{"source":"mystery"}}
+            ]
+        });
+        let m = super::parse_manifest(&json).unwrap();
+        let by = |n: &str| m.plugins.iter().find(|p| p.name == n).unwrap();
+        assert_eq!(
+            by("rel").source,
+            Some(PluginSource::RelativePath { path: "./plugins/rel".into() })
+        );
+        assert_eq!(
+            by("u").source,
+            Some(PluginSource::Git { url: "https://x/r.git".into(), commit: "abc".into(), subdir: Some("sub".into()) })
+        );
+        assert_eq!(
+            by("u2").source,
+            Some(PluginSource::Git { url: "https://x/r.git".into(), commit: "def".into(), subdir: None })
+        );
+        assert_eq!(
+            by("gs").source,
+            Some(PluginSource::Git { url: "https://x/g.git".into(), commit: "123".into(), subdir: Some("p".into()) })
+        );
+        assert_eq!(
+            by("gh").source,
+            Some(PluginSource::Git { url: "https://github.com/o/n.git".into(), commit: "deadbeef".into(), subdir: None })
+        );
+        // Source inconnue : entrée conservée (nom/description) mais source None.
+        assert_eq!(by("weird").source, None);
+        // Toutes les entrées restent listées (catalogue non régressé).
+        assert_eq!(m.plugins.len(), 6);
     }
 }

@@ -138,3 +138,42 @@ Revue finale (opus, e624e98..1c6496d) : « Ready to merge: Yes », 0 Critical/Im
 - Cosmétiques 2c-2a non bloquants: `use` dans mod tests (marketplaces.rs) ; doc-comment `catalog_close`.
 
 PHASE 2c-2a TERMINÉE, prête pour merge.
+
+--- PHASE 2c-2b (branche claudine-phase2c2b) — Installation de plugins ---
+
+Plan: docs/superpowers/plans/2026-06-23-claudine-phase2c2b-installation.md
+Spec: docs/superpowers/specs/2026-06-23-claudine-phase2c2b-installation-design.md
+Base branche: e4a96e7 (spec + plan commités)
+
+## Tâches 2c-2b
+- Task 1: cœur — PluginSource + parsing du `source` (4 types) — complete
+- Task 2: cœur — git clone_full + checkout (commit épinglé) — complete
+- Task 3: cœur — install_plugin relative-path + registre + auto-activation — complete
+- Task 4: cœur — install_plugin branche git (clone+checkout+sous-dossier+temp) — complete
+- Task 5: cœur — M1 : uninstall_plugin supprime le cache après les écritures registre — complete
+- Task 6: TUI — touche `i` (install), job de fond + spinner, refresh entrée — complete
+
+## Completed 2c-2b
+Task 1: complete (commit f27195d, review clean — Approved) — PluginSource enum + champ source: Option<PluginSource> + parse_plugin_source (4 formes : url/git-subdir→sha, github→commit+url, relative string). Entrées à source inconnue conservées (source None, catalogue non régressé). Re-export lib.rs + fix helper pm() TUI. 84 tests workspace, 0 clippy.
+  Minor (T1, pour triage review final) : (a) branche empty-string de parse_plugin_source non testée directement ; (b) `github` ignore silencieusement un éventuel `path` — ajouter un commentaire d'intention. Aucun Critical/Important.
+Task 2: complete (commit eb77be4, review clean — Approved) — git::clone_full (historique complet, durci) + git::checkout(--detach), réutilisent finish(). allow(dead_code) sur les 2 (retrait Task 4). Test offline 2 commits (pin sha1 sur contenu) + bad-commit/dash-url/dash-commit → Err. 85 tests, 0 clippy.
+  Minor (T2, triage final) : label finish "git clone" identique pour clone et clone_full (messages d'erreur indistinguables). Aucun Critical/Important.
+Task 3: complete (commit 1360d84, review clean — Approved) — install_plugin (branche relative-path) + copy_dir_recursive (ignore symlinks) + read_plugin_version (fallback "unknown") + écriture installed_plugins.json (entrée user, autres scopes préservés) + auto-activation via extensions::set_plugin_enabled. Branche Git = Err provisoire (Task 4). Confinement double (rejet .. + starts_with). 89 tests, 0 clippy.
+  Minor/obs (T3, triage final) : installedAt écrasé à la réinstallation (perte de la date d'install d'origine) — acceptable (doc « réécrit la version »). Aucun Critical/Important.
+Task 4: complete (commit 34d18d6, review clean — Approved) — branche Git d'install_plugin (temp_git_<nanos>, clone_full+checkout, sous-dossier confiné, nettoyage temp sur CHAQUE retour d'erreur + après copie). allow(dead_code) retirés des 2 helpers. Tests offline (repo local en url) : url+pin+auto-enable+pas de temp résiduel, git-subdir, bad-commit→Err sans registre ni temp. 157 tests workspace, 0 clippy.
+  Minor (T4, triage final) : test bad-commit passait en RED trivialement (stub renvoyait Err) — un test « clone ok / checkout échoue / temp supprimé » isolerait mieux ; chemin de nettoyage couvert en GREEN. Aucun Critical/Important.
+Task 5: complete (commit 5961f59, review clean — Approved) — M1 : uninstall_plugin réordonné (valide le chemin tôt sans supprimer → écrit installed_plugins.json → écrit settings.json → supprime le cache en dernier). Hardening conservé (.. + starts_with + canonicalisation). Test unix : plugins/ en lecture seule → save échoue, cache préservé (perms restaurées avant assert). 158 tests, 0 clippy.
+  Minor (T5, triage final) : commentaire au-dessus du filtre `remaining` moins précis qu'avant (perd le « quoi »). Aucun Critical/Important.
+Task 6: complete (commit 1ac8bcb, review clean — Approved) — TUI : PluginCatalog::mark_installed (+test) ; MktJobKind{Marketplace,InstallPlugin} + champ kind ; tick_mkt_job branché sur kind (capture kind avant clear) ; catalog_install (job de fond, no-op si occupé) ; touche `i` + gate !busy sur Espace/i/d ; render_plugin_catalog reçoit le job (spinner + hint) ; aide MAJ. 159 tests, 0 clippy. PHASE 2c-2b 6/6.
+  Minor (T6, triage final) : (a) hint "installation en cours" affiché pour tout job pendant que le catalogue est ouvert (cas rare ; mot générique « opération en cours » plus sûr) ; (b) catalog_install : clones verbeux (cosmétique). Aucun Critical/Important.
+
+## Revue finale 2c-2b (opus, 1d04206..1ac8bcb)
+Verdict : « Ready to merge: No (with fixes) » — 1 Critical, 1 Important.
+- [C1 CRITICAL] install_plugin : `version` (issu d'un plugin.json tiers, non fiable) composé dans `dest=cache/<mkt>/<plugin>/<version>` sans validation ; garde `starts_with(cache_root)` purement lexical → `version="../../../../x"` s'évade → remove_dir_all + copy hors cache (primitive delete+write). Fix : valider `version` (is_safe_name → repli "unknown") + scan composant ParentDir sur dest (comme uninstall_plugin).
+- [I1 IMPORTANT] confinement relative-path/git src lexical ; `is_dir()` suit les symlinks → un src symlink fait copier des fichiers externes dans le cache. Fix : canonicaliser src + re-vérifier la containment sous mkt_dir (relative) / temp (git).
+- 8 Minors (T1a/T1b/T2/T3/T4/T5/T6a/T6b) tous triés « Defer » par la revue.
+Points forts confirmés : durcissement git réutilisé, discipline de nettoyage temp, M1 correct, intégrité registre (array-par-scope, SettingsDoc atomique), concurrence saine, clippy 0 / 159 tests.
+
+## Fix wave finale 2c-2b: complete (commit 424bf0a, re-review Approved)
+C1 + I1 corrigés : version sanitisée via is_safe_name (repli "unknown") + rejet composant ParentDir sur dest ; canonicalisation src+racine (relative→mkt_dir, git→temp) avec rejet hors-racine et nettoyage temp préservé. 2 tests de régression (malicious version → unknown/ + rien hors cache ; symlink source #[cfg(unix)] → Err). Workspace 95 (core)/159, 0 clippy. Re-review opus-finding : C1✅ I1✅, 0 Critical/Important restant (1 Minor doc-coverage non exploitable).
+PHASE 2c-2b TERMINÉE, prête pour merge (branche claudine-phase2c2b, e4a96e7..424bf0a).

@@ -7,8 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use claudine_core::{
     add_marketplace, apply as import_apply, decode_encoded_to_path, discover_homes,
-    dry_run as import_dry_run, empty_trash, export, find_in_session, list_trash, move_session,
-    purge_trash_item, read_extensions, read_hook_groups, read_installed_plugins,
+    dry_run as import_dry_run, empty_trash, export, find_in_session, install_plugin, list_trash,
+    move_session, purge_trash_item, read_extensions, read_hook_groups, read_installed_plugins,
     read_marketplace_manifest, read_marketplaces, read_user_mcp_servers, remove_marketplace,
     restore_trash_entry, scan_projects, set_plugin_enabled, trash_project, trash_session,
     uninstall_plugin, update_marketplace, write_hooks, write_user_mcp_servers, ClaudeHome,
@@ -34,6 +34,15 @@ pub struct MktJob {
     pub label: String,
     pub frame: u8,
     pub rx: std::sync::mpsc::Receiver<MktOutcome>,
+    pub kind: MktJobKind,
+}
+
+/// Nature d'un job de fond : opération marketplace (rafraîchit la liste) ou
+/// installation de plugin (rafraîchit l'entrée du catalogue).
+#[derive(Debug, Clone)]
+pub enum MktJobKind {
+    Marketplace,
+    InstallPlugin { plugin: String },
 }
 
 /// Sections de premier niveau, sélectionnables avec Tab / 1,2,3,4.
@@ -1152,7 +1161,7 @@ impl App {
                 .map_err(|e| e.to_string());
             let _ = tx.send(MktOutcome { result });
         });
-        self.mkt_job = Some(MktJob { label, frame: 0, rx });
+        self.mkt_job = Some(MktJob { label, frame: 0, rx, kind: MktJobKind::Marketplace });
     }
 
     /// Lance la mise à jour de la marketplace sélectionnée en arrière-plan.
@@ -1169,7 +1178,7 @@ impl App {
                 .map_err(|e| e.to_string());
             let _ = tx.send(MktOutcome { result });
         });
-        self.mkt_job = Some(MktJob { label, frame: 0, rx });
+        self.mkt_job = Some(MktJob { label, frame: 0, rx, kind: MktJobKind::Marketplace });
     }
 
     /// Retire la marketplace sélectionnée (opération locale, synchrone).
@@ -1214,11 +1223,24 @@ impl App {
                 result: Err("le job s'est interrompu".to_string()),
             },
         };
+        let kind = job.kind.clone();
         self.mkt_job = None;
-        let home = self.home().clone();
-        let items = read_marketplaces(&home).unwrap_or_default();
-        if let Some(m) = self.marketplaces.as_mut() {
-            m.set_items(items);
+        match (&kind, &outcome.result) {
+            // Installation réussie : l'entrée du catalogue passe installée + activée.
+            (MktJobKind::InstallPlugin { plugin }, Ok(_)) => {
+                if let Some(c) = self.marketplaces.as_mut().and_then(|m| m.catalog.as_mut()) {
+                    c.mark_installed(plugin);
+                }
+            }
+            // Opération marketplace : rafraîchir la liste (succès ou échec).
+            (MktJobKind::Marketplace, _) => {
+                let home = self.home().clone();
+                let items = read_marketplaces(&home).unwrap_or_default();
+                if let Some(m) = self.marketplaces.as_mut() {
+                    m.set_items(items);
+                }
+            }
+            _ => {}
         }
         self.status = Some(match outcome.result {
             Ok(msg) => msg,
@@ -1309,6 +1331,42 @@ impl App {
             }
             Err(e) => self.status = Some(format!("Échec désinstallation : {e}")),
         }
+    }
+
+    /// Installe le plugin sélectionné (non installé) en arrière-plan.
+    pub fn catalog_install(&mut self) {
+        if self.mkt_job.is_some() {
+            return;
+        }
+        let info = self
+            .marketplaces
+            .as_ref()
+            .and_then(|m| m.catalog.as_ref())
+            .and_then(|c| {
+                c.selected()
+                    .filter(|e| !e.installed)
+                    .map(|e| (c.marketplace.clone(), e.name.clone()))
+            });
+        let Some((mkt, plugin)) = info else {
+            return;
+        };
+        let home = self.home().clone();
+        let label = format!("installation de {plugin}");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mkt_c = mkt.clone();
+        let plugin_c = plugin.clone();
+        std::thread::spawn(move || {
+            let result = install_plugin(&home, &mkt_c, &plugin_c)
+                .map(|()| format!("plugin « {plugin_c} » installé"))
+                .map_err(|e| e.to_string());
+            let _ = tx.send(MktOutcome { result });
+        });
+        self.mkt_job = Some(MktJob {
+            label,
+            frame: 0,
+            rx,
+            kind: MktJobKind::InstallPlugin { plugin },
+        });
     }
 
     // --- Modal de bascule des plugins ---
@@ -3098,7 +3156,7 @@ mod tests {
         // Injecte un job déjà terminé.
         let (tx, rx) = std::sync::mpsc::channel();
         tx.send(MktOutcome { result: Ok("ajoutée".to_string()) }).unwrap();
-        app.mkt_job = Some(MktJob { label: "ajout".into(), frame: 0, rx });
+        app.mkt_job = Some(MktJob { label: "ajout".into(), frame: 0, rx, kind: MktJobKind::Marketplace });
         assert!(app.mkt_job_active());
 
         app.tick_mkt_job();

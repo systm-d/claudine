@@ -534,36 +534,38 @@ pub fn uninstall_plugin(home: &ClaudeHome, plugin: &str, marketplace: &str) -> R
         return Err(CoreError::Marketplace(format!("plugin non installé : {key}")));
     };
 
-    // Supprime le dossier de cache, confiné strictement sous plugins/cache/.
-    if let Some(install_path) = user_entry.get("installPath").and_then(|p| p.as_str()) {
-        let path = PathBuf::from(install_path);
-        let cache_root = home.plugins_dir().join("cache");
-        // Anti-traversée : refuse tout composant `..` (le préfixe lexical ne suffit
-        // pas), exige la confinement sous cache/, et refuse cache/ lui-même.
-        let has_parent = path
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir));
-        if has_parent || !path.starts_with(&cache_root) || path == cache_root {
-            return Err(CoreError::Marketplace(format!(
-                "chemin d'installation hors cache : {install_path}"
-            )));
-        }
-        if path.exists() {
-            // Neutralise un éventuel lien symbolique : la cible réelle doit rester
-            // sous cache/ une fois canonicalisée.
-            let canon = std::fs::canonicalize(&path).map_err(|e| CoreError::io(&path, e))?;
-            let canon_root =
-                std::fs::canonicalize(&cache_root).map_err(|e| CoreError::io(&cache_root, e))?;
-            if !canon.starts_with(&canon_root) || canon == canon_root {
+    // Valide le chemin de cache à supprimer SANS le supprimer encore : le registre
+    // doit être réécrit d'abord (autoritaire), la suppression du cache vient après.
+    let to_delete: Option<PathBuf> = match user_entry.get("installPath").and_then(|p| p.as_str()) {
+        Some(install_path) => {
+            let path = PathBuf::from(install_path);
+            let cache_root = home.plugins_dir().join("cache");
+            let has_parent = path
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir));
+            if has_parent || !path.starts_with(&cache_root) || path == cache_root {
                 return Err(CoreError::Marketplace(format!(
                     "chemin d'installation hors cache : {install_path}"
                 )));
             }
-            fs::remove_dir_all(&canon).map_err(|e| CoreError::io(&canon, e))?;
+            if path.exists() {
+                let canon = std::fs::canonicalize(&path).map_err(|e| CoreError::io(&path, e))?;
+                let canon_root =
+                    std::fs::canonicalize(&cache_root).map_err(|e| CoreError::io(&cache_root, e))?;
+                if !canon.starts_with(&canon_root) || canon == canon_root {
+                    return Err(CoreError::Marketplace(format!(
+                        "chemin d'installation hors cache : {install_path}"
+                    )));
+                }
+                Some(canon)
+            } else {
+                None
+            }
         }
-    }
+        None => None,
+    };
 
-    // Retire l'entrée user du tableau (clé entière si plus rien).
+    // Écritures registre d'abord.
     let remaining: Vec<Value> = entries
         .into_iter()
         .filter(|e| e.get("scope").and_then(|s| s.as_str()) != Some("user"))
@@ -581,6 +583,11 @@ pub fn uninstall_plugin(home: &ClaudeHome, plugin: &str, marketplace: &str) -> R
     if sdoc.get(&["enabledPlugins", key.as_str()]).is_some() {
         sdoc.unset(&["enabledPlugins", key.as_str()]);
         sdoc.save(&settings_path)?;
+    }
+
+    // Supprime le dossier de cache en dernier (registre désormais cohérent).
+    if let Some(canon) = to_delete {
+        fs::remove_dir_all(&canon).map_err(|e| CoreError::io(&canon, e))?;
     }
     Ok(())
 }
@@ -896,6 +903,37 @@ mod tests {
     fn uninstall_plugin_unknown_key_errors() {
         let (_d, home) = home_with(&[("plugins/installed_plugins.json", r#"{"version":2,"plugins":{}}"#)]);
         assert!(uninstall_plugin(&home, "nope", "m").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uninstall_plugin_keeps_cache_when_registry_write_fails() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, home) = home_with(&[("settings.json", r#"{"enabledPlugins":{"foo@m":true}}"#)]);
+        let base = home.base.clone();
+        let foo_cache = base.join("plugins/cache/m/foo/1.0.0");
+        std::fs::create_dir_all(&foo_cache).unwrap();
+        let installed = format!(
+            r#"{{"version":2,"plugins":{{"foo@m":[{{"scope":"user","installPath":"{}","version":"1.0.0"}}]}}}}"#,
+            foo_cache.display()
+        );
+        let plugins_dir = base.join("plugins");
+        std::fs::write(plugins_dir.join("installed_plugins.json"), installed).unwrap();
+
+        // Rend plugins/ non inscriptible → l'écriture d'installed_plugins.json échoue.
+        let mut perms = std::fs::metadata(&plugins_dir).unwrap().permissions();
+        perms.set_mode(0o555);
+        std::fs::set_permissions(&plugins_dir, perms).unwrap();
+
+        let res = uninstall_plugin(&home, "foo", "m");
+
+        // Restaure les permissions avant toute assertion (teardown-on-panic).
+        let mut perms = std::fs::metadata(&plugins_dir).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&plugins_dir, perms).unwrap();
+
+        assert!(res.is_err(), "l'écriture registre doit échouer");
+        assert!(foo_cache.exists(), "cache préservé car la suppression vient après le registre");
     }
 
     #[test]
