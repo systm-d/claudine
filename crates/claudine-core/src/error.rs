@@ -22,6 +22,8 @@ pub enum CoreError {
     Conflict(String),
     #[error("bundle invalide: {0}")]
     BundleFormat(String),
+    #[error("{0}")]
+    Marketplace(String),
 }
 
 impl CoreError {

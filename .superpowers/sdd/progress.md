@@ -70,3 +70,38 @@ Task 2b.4: complete (commits 07320b1..60529e4, review clean) — édition champs
 Task 2b.5: complete (commits 60529e4..26a3ce6, review clean) — câblage MCP (m), cohabitation m gérée, allow(dead_code) retiré. 4 risques nommés OK.
 Task 2b.6: complete (commits 26a3ce6..58dad24, review clean) — raccourci m + doc module + aide. PHASE 2b 6/6.
 Revue finale 2b (632ee6f..58dad24) : « ready to merge: yes ». Fix: derive Debug McpEditor (1 ligne). 115 tests verts.
+
+--- PHASE 2c-1 (branche claudine-phase2c1) — Marketplaces & socle ---
+
+Plan: docs/superpowers/plans/2026-06-23-claudine-phase2c1-marketplaces.md
+Base branche: d588a72 (spec + plan commités)
+
+## Tâches 2c-1
+- Task 1: cœur — modèle/parse/lecture registre+manifeste/iso8601 — complete
+- Task 2: cœur — git helper + add/remove/update — complete
+- Task 3: TUI — état MarketplacesManager — complete
+- Task 4: TUI — câblage app + concurrence (thread) + routage — complete
+- Task 5: TUI — rendu modal + footer/aide + vérif finale — complete
+
+## Findings (Minor) 2c-1 à revoir au review final
+- T1: `read_marketplace_manifest` ne valide pas `name` via `is_safe_name` avant le join (chemin read, risque limité) — à corriger quand l'entrée devient user-controlled (Task 2 utilise déjà is_safe_name ailleurs).
+- T1: `read_marketplaces` suppose que `SettingsDoc::load` ne `Err` pas sur fichier absent (test absent_is_empty couvre le runtime).
+- T1: `is_safe_name` redondance `name != ".."` vs `!name.contains("..")` (cosmétique).
+- T2 (Minor, plan-mandated): `update_marketplace` no-op silencieux si l'entrée registre est absente alors que le dossier existe (désync) — comportement hérité du plan, à trancher au review final.
+- T3 (Minor): `MarketplacesManager` sans `#[derive(Debug)]` (incohérent avec McpEditor/MktMode) — à ajouter au review final.
+- T3 (Minor, info): `set_items` ne reset pas `confirm_remove`/`mode` — OK en pratique (câblage T4 les remet à plat avant).
+- T4 (Minor): `Event::Resize` non re-dessiné explicitement dans la branche poll (redessin auto au tick ≤120 ms, impact nul) — pourrait être géré explicitement au review final.
+- T4 (Minor, info): annotation `Deferred` = style ; `confirm_remove` non gardé par `!busy` mais synchrone (pas de race).
+- T5 (Minor): `url.clone()` superflu dans le `format!` de `render_marketplaces` (chemin de rendu, coût négligeable) — `url.as_str()` suffirait.
+
+## Sécurité (à corriger dans la vague de fix Task 2)
+- [HIGH] Argument injection dans `mod git::clone` : `url` commençant par `-` (flag smuggling) et transport `ext::` (exec arbitraire). Fix : rejeter url débutant par `-`, insérer `--` avant url/dest, et `-c protocol.ext.allow=never`. La source est l'utilisateur (sa machine) mais l'intention = dépôt git → défense en profondeur justifiée.
+
+## Completed 2c-1
+Task 1: complete (commit 1e05f5b, review clean — Approved) — modèle + parsing + lecture registre/manifeste + iso8601. Algo civil_from_days vérifié arithmétiquement par le reviewer. 6 tests pass, 69 full suite pass, 0 clippy. 3 Minor consignés ci-dessus.
+Task 2: complete (commits 4d8bbb4 impl + f237a77 fix sécurité, review+re-review clean — Approved) — git helper + add/remove/update. HIGH arg-injection neutralisé (guard `-`, `--`, protocol.ext.allow=never) + nettoyage tmp sur échec clone. 14 tests marketplaces, suite verte, 0 clippy. Minor update-no-op consigné.
+Task 3: complete (commit c86b657, review clean — Approved) — état MarketplacesManager (nav bornée, add-input, confirm remove). 4 tests, 54/54 -p claudine, 0 clippy. 2 Minor consignés (Debug derive, set_items reset).
+Task 4: complete (commit 4ffaece, review clean — Approved) — câblage App + jobs git en arrière-plan (thread+mpsc), event::poll quand job actif, routage handle_marketplaces_key, ouverture g. Borrow safety + ownership thread vérifiés. 4 tests, 60 tests -p claudine, 0 clippy. 3 Minor consignés.
+Task 5: complete (commit ab39535, review clean — Approved) — rendu render_marketplaces (3 états + spinner), footer/aide (g), allow(dead_code) MktJob.label retiré. Workspace: 137 tests verts, 0 clippy. 1 Minor (url.clone). PHASE 2c-1 5/5.
+Revue finale (opus, e153d47..ab39535) : « Ready to merge: Yes », 0 Critical/Important. Sécurité anti-injection validée bout-en-bout, atomicité + concurrence saines. Fix recommandé T2 (update no-op→erreur) + T3 (derive Debug).
+Fix wave finale: complete (commit a7ed62b, re-review Approved) — update_marketplace erre sur désync (check avant pull) + derive Debug MarketplacesManager + test. Workspace 138 tests verts, 0 clippy. PHASE 2c-1 TERMINÉE, prête pour merge.

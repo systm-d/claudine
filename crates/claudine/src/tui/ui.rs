@@ -14,7 +14,8 @@ use super::app::{App, BrowseView, DeleteKind, Focus, PickerMode, PurgeScope, Sec
 use crate::tui::app::{human_size, humanize_path};
 use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
 use crate::tui::mcp_editor::{McpEdit, McpLevel, McpRow};
-use claudine_core::{scan_projects, McpTransport};
+use claudine_core::{scan_projects, MarketplaceSource, McpTransport};
+use crate::tui::marketplaces::MktMode;
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
@@ -85,6 +86,9 @@ pub fn render(app: &mut App, f: &mut Frame) {
     }
     if app.mcp_editor.is_some() {
         render_mcp_editor(app, f, area);
+    }
+    if app.marketplaces.is_some() {
+        render_marketplaces(app, f, area);
     }
 
     if app.show_picker {
@@ -875,6 +879,7 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("Enter", "hooks"),
             ("p", "plugins"),
             ("m", "MCP"),
+            ("g", "marketplaces"),
             ("↑/↓", "défiler"),
             ("t", "cible"),
             ("E", "settings"),
@@ -905,7 +910,7 @@ fn render_help(f: &mut Frame, area: Rect) {
     let rows = [
         ("1 / 2 / 3 / 4", "Projets / Mémoire / Config / Extensions"),
         ("Tab", "section suivante"),
-        ("Extensions", "hooks (Enter) · plugins (p) · serveurs MCP (m) — éditables ; E édite settings.json"),
+        ("Extensions", "hooks (Enter) · plugins (p) · MCP (m) · marketplaces (g) ; E édite settings.json"),
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
@@ -1666,6 +1671,88 @@ fn render_mcp_editor(app: &App, f: &mut Frame, area: Rect) {
             "  Supprimer l'élément sélectionné ? (o/n)",
             Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
         )));
+    }
+
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+/// Modal du gestionnaire de marketplaces (liste, saisie d'ajout, confirmation, indicateur de job).
+fn render_marketplaces(app: &App, f: &mut Frame, area: Rect) {
+    let Some(m) = &app.marketplaces else {
+        return;
+    };
+    let popup = centered_rect(78, 68, area);
+    f.render_widget(Clear, popup);
+
+    let busy = app.mkt_job.is_some();
+    let hint = if m.mode == MktMode::AddInput {
+        " Enter valider · Esc annuler "
+    } else if busy {
+        " (opération en cours…) · Esc fermer "
+    } else {
+        " a ajouter · u màj · d retirer · Esc fermer "
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Marketplaces de plugins ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(hint).right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = Vec::new();
+    if m.items.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (aucune marketplace — 'a' pour en ajouter)",
+            Style::default().fg(DIM),
+        )));
+    }
+    for (i, mk) in m.items.iter().enumerate() {
+        let sel = i == m.idx;
+        let src = match &mk.source {
+            MarketplaceSource::Github { repo } => format!("github:{repo}"),
+            MarketplaceSource::Git { url } => url.clone(),
+            MarketplaceSource::Local { path } => format!("local:{}", path.display()),
+        };
+        let date = mk.last_updated.split('T').next().unwrap_or("");
+        let label = format!("{} {}  ·  {}  ·  {}", if sel { "▶" } else { " " }, mk.name, src, date);
+        let style = if sel { selection_style(true) } else { Style::default() };
+        lines.push(Line::from(Span::styled(label, style)));
+    }
+
+    if m.mode == MktMode::AddInput {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Source (owner/repo · URL git · chemin local) :",
+            Style::default().fg(ACCENT),
+        )));
+        lines.push(Line::from(vec![
+            Span::styled("  > ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::raw(m.input.clone()),
+            Span::styled("▏", Style::default().fg(ACCENT)),
+        ]));
+    } else if m.confirm_remove {
+        lines.push(Line::from(""));
+        let name = m.selected_name().unwrap_or_default();
+        lines.push(Line::from(Span::styled(
+            format!("  Retirer « {name} » et son dossier ? (o/n)"),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        )));
+    } else if busy {
+        if let Some(job) = &app.mkt_job {
+            const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+            let s = SPINNER[(job.frame as usize) % SPINNER.len()];
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                format!("  {s} {}…", job.label),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )));
+        }
     }
 
     f.render_widget(Paragraph::new(Text::from(lines)), inner);
