@@ -481,6 +481,134 @@ pub fn remove_marketplace(home: &ClaudeHome, name: &str) -> Result<()> {
     doc.save(&path)
 }
 
+/// Lit `version` depuis `<src>/.claude-plugin/plugin.json` (absent → None).
+fn read_plugin_version(src: &Path) -> Option<String> {
+    let p = src.join(".claude-plugin").join("plugin.json");
+    let content = std::fs::read_to_string(&p).ok()?;
+    let v: Value = serde_json::from_str(&content).ok()?;
+    v.get("version").and_then(|x| x.as_str()).map(String::from)
+}
+
+/// Copie récursive de `src` vers `dest` (fichiers + dossiers ; liens symboliques ignorés).
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
+    std::fs::create_dir_all(dest).map_err(|e| CoreError::io(dest, e))?;
+    for entry in std::fs::read_dir(src).map_err(|e| CoreError::io(src, e))? {
+        let entry = entry.map_err(|e| CoreError::io(src, e))?;
+        let from = entry.path();
+        let to = dest.join(entry.file_name());
+        let ft = entry.file_type().map_err(|e| CoreError::io(&from, e))?;
+        if ft.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else if ft.is_file() {
+            std::fs::copy(&from, &to).map_err(|e| CoreError::io(&to, e))?;
+        }
+    }
+    Ok(())
+}
+
+/// Installe un plugin (portée user) depuis le catalogue d'une marketplace :
+/// matérialise ses fichiers dans `cache/<mkt>/<plugin>/<version>/`, écrit
+/// `installed_plugins.json` et l'auto-active. Idempotent (réécrit la version).
+pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Result<()> {
+    if !is_safe_name(marketplace) {
+        return Err(CoreError::Marketplace(format!(
+            "nom de marketplace invalide : {marketplace}"
+        )));
+    }
+    if !is_safe_name(plugin) {
+        return Err(CoreError::Marketplace(format!("nom de plugin invalide : {plugin}")));
+    }
+
+    // 1. Localiser l'entrée du plugin et sa source.
+    let manifest = read_marketplace_manifest(home, marketplace)?;
+    let source = manifest
+        .plugins
+        .iter()
+        .find(|p| p.name == plugin)
+        .ok_or_else(|| {
+            CoreError::Marketplace(format!("plugin introuvable au catalogue : {plugin}@{marketplace}"))
+        })?
+        .source
+        .clone()
+        .ok_or_else(|| {
+            CoreError::Marketplace(format!("source de plugin non gérée : {plugin}@{marketplace}"))
+        })?;
+
+    let cache_root = home.plugins_dir().join("cache");
+
+    // 2. Matérialiser la source dans `src` (`temp` = à nettoyer si clone).
+    let (src, temp): (PathBuf, Option<PathBuf>) = match &source {
+        PluginSource::RelativePath { path } => {
+            let rel = path.trim_start_matches("./");
+            if rel.is_empty() || rel.split('/').any(|c| c == ".." || c.is_empty()) {
+                return Err(CoreError::Marketplace(format!("chemin de plugin invalide : {path}")));
+            }
+            let mkt_dir = marketplaces_dir(home).join(marketplace);
+            let dir = mkt_dir.join(rel);
+            if !dir.starts_with(&mkt_dir) || !dir.is_dir() {
+                return Err(CoreError::Marketplace(format!(
+                    "dossier de plugin introuvable : {}",
+                    dir.display()
+                )));
+            }
+            (dir, None)
+        }
+        PluginSource::Git { .. } => {
+            // Implémenté en Task 4.
+            return Err(CoreError::Marketplace(
+                "installation git non encore implémentée".to_string(),
+            ));
+        }
+    };
+
+    // 3. Version (depuis plugin.json), sinon "unknown".
+    let version = read_plugin_version(&src).unwrap_or_else(|| "unknown".to_string());
+
+    // 4. Copier vers cache/<mkt>/<plugin>/<version>/ (confiné, idempotent).
+    let copy_result = (|| -> Result<PathBuf> {
+        let dest = cache_root.join(marketplace).join(plugin).join(&version);
+        if !dest.starts_with(&cache_root) {
+            return Err(CoreError::Marketplace("destination hors cache".to_string()));
+        }
+        if dest.exists() {
+            std::fs::remove_dir_all(&dest).map_err(|e| CoreError::io(&dest, e))?;
+        }
+        copy_dir_recursive(&src, &dest)?;
+        Ok(dest)
+    })();
+    if let Some(t) = &temp {
+        let _ = std::fs::remove_dir_all(t);
+    }
+    let dest = copy_result?;
+
+    // 5. Écrire l'entrée scope user d'installed_plugins.json.
+    let key = format!("{plugin}@{marketplace}");
+    let installed_path = home.plugins_dir().join("installed_plugins.json");
+    let mut doc = SettingsDoc::load(&installed_path)?;
+    if doc.get(&["version"]).is_none() {
+        doc.set(&["version"], Value::Number(2u64.into()));
+    }
+    let now = iso8601_utc(SystemTime::now());
+    let mut entry = Map::new();
+    entry.insert("scope".into(), Value::String("user".into()));
+    entry.insert("installPath".into(), Value::String(dest.to_string_lossy().into_owned()));
+    entry.insert("version".into(), Value::String(version.clone()));
+    entry.insert("installedAt".into(), Value::String(now.clone()));
+    entry.insert("lastUpdated".into(), Value::String(now));
+    let mut arr: Vec<Value> = doc
+        .get(&["plugins", key.as_str()])
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    arr.retain(|x| x.get("scope").and_then(|s| s.as_str()) != Some("user"));
+    arr.push(Value::Object(entry));
+    doc.set(&["plugins", key.as_str()], Value::Array(arr));
+    doc.save(&installed_path)?;
+
+    // 6. Auto-activer (réutilise extensions.rs).
+    crate::extensions::set_plugin_enabled(home, &key, true)
+}
+
 /// Met à jour une marketplace (`git pull`) et rafraîchit `lastUpdated`.
 pub fn update_marketplace(home: &ClaudeHome, name: &str) -> Result<()> {
     if !is_safe_name(name) {
@@ -784,6 +912,88 @@ mod tests {
         let dir = home.plugins_dir().join("marketplaces").join("orphan");
         std::fs::create_dir_all(&dir).unwrap();
         assert!(update_marketplace(&home, "orphan").is_err());
+    }
+
+    /// Écrit une marketplace clonée fictive avec un manifeste et un plugin relative-path.
+    fn seed_rel_marketplace(home: &ClaudeHome, mkt: &str, plugin: &str, version: Option<&str>) {
+        let mdir = home.plugins_dir().join("marketplaces").join(mkt);
+        // Manifeste avec une entrée relative-path.
+        let cp = mdir.join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        let manifest = format!(
+            r#"{{"name":"{mkt}","plugins":[{{"name":"{plugin}","description":"d","source":"./plugins/{plugin}"}}]}}"#
+        );
+        std::fs::write(cp.join("marketplace.json"), manifest).unwrap();
+        // Fichiers du plugin sous marketplaces/<mkt>/plugins/<plugin>/.
+        let pdir = mdir.join("plugins").join(plugin);
+        let pcp = pdir.join(".claude-plugin");
+        std::fs::create_dir_all(&pcp).unwrap();
+        let pj = match version {
+            Some(v) => format!(r#"{{"name":"{plugin}","version":"{v}"}}"#),
+            None => format!(r#"{{"name":"{plugin}"}}"#),
+        };
+        std::fs::write(pcp.join("plugin.json"), pj).unwrap();
+        std::fs::write(pdir.join("SKILL.md"), "hello").unwrap();
+    }
+
+    #[test]
+    fn install_plugin_relative_path_materializes_and_enables() {
+        let (_d, home) = home();
+        seed_rel_marketplace(&home, "m", "p", Some("1.2.3"));
+
+        install_plugin(&home, "m", "p").unwrap();
+
+        // Fichiers copiés sous cache/<mkt>/<plugin>/<version>/.
+        let dest = home.plugins_dir().join("cache/m/p/1.2.3");
+        assert!(dest.join("SKILL.md").is_file(), "fichier copié");
+        assert!(dest.join(".claude-plugin/plugin.json").is_file());
+
+        // Entrée installed_plugins.json (scope user, installPath, version).
+        let doc = SettingsDoc::load(&home.plugins_dir().join("installed_plugins.json")).unwrap();
+        let arr = doc.get(&["plugins", "p@m"]).and_then(|v| v.as_array()).cloned().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0].get("scope").and_then(|s| s.as_str()), Some("user"));
+        assert_eq!(arr[0].get("version").and_then(|s| s.as_str()), Some("1.2.3"));
+        assert_eq!(
+            arr[0].get("installPath").and_then(|s| s.as_str()),
+            Some(dest.to_string_lossy().as_ref())
+        );
+
+        // Auto-activé.
+        let sdoc = SettingsDoc::load(&home.settings_file()).unwrap();
+        assert_eq!(sdoc.get_bool(&["enabledPlugins", "p@m"]), Some(true));
+    }
+
+    #[test]
+    fn install_plugin_missing_version_uses_unknown() {
+        let (_d, home) = home();
+        seed_rel_marketplace(&home, "m", "p", None);
+        install_plugin(&home, "m", "p").unwrap();
+        assert!(home.plugins_dir().join("cache/m/p/unknown").join("SKILL.md").is_file());
+    }
+
+    #[test]
+    fn install_plugin_unknown_plugin_errors() {
+        let (_d, home) = home();
+        seed_rel_marketplace(&home, "m", "p", Some("1"));
+        assert!(install_plugin(&home, "m", "absent").is_err());
+        // Rien écrit.
+        assert!(!home.plugins_dir().join("installed_plugins.json").exists());
+    }
+
+    #[test]
+    fn install_plugin_rejects_dotdot_in_relative_source() {
+        let (_d, home) = home();
+        let mdir = home.plugins_dir().join("marketplaces").join("m");
+        let cp = mdir.join(".claude-plugin");
+        std::fs::create_dir_all(&cp).unwrap();
+        std::fs::write(
+            cp.join("marketplace.json"),
+            r#"{"name":"m","plugins":[{"name":"evil","source":"./../../etc"}]}"#,
+        )
+        .unwrap();
+        assert!(install_plugin(&home, "m", "evil").is_err());
+        assert!(!home.plugins_dir().join("cache").join("m").exists());
     }
 
     #[test]
