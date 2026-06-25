@@ -101,13 +101,14 @@ pub fn render(app: &mut App, f: &mut Frame) {
     }
 }
 
-/// Logo Claude Code (petite créature pixel) en demi-blocs, couleur Claude.
+/// Logo Claude Code (glyphe officiel de la boîte « What's new ») en demi-blocs,
+/// couleur Claude.
 fn claude_logo_lines() -> Vec<Line<'static>> {
     let o = Style::default().fg(Color::Rgb(0xd9, 0x77, 0x57));
     vec![
-        Line::from(Span::styled(" ██▀███▀██ ", o)),
-        Line::from(Span::styled("▀█████████▀", o)),
-        Line::from(Span::styled("  ▀ ▀ ▀ ▀  ", o)),
+        Line::from(Span::styled(" ▐▛███▜▌", o)),
+        Line::from(Span::styled("▝▜█████▛▘", o)),
+        Line::from(Span::styled("  ▘▘ ▝▝", o)),
     ]
 }
 
@@ -149,7 +150,7 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(tabs, tabs_area);
 
     // Logo Claude aligné à droite, sur les 3 lignes intérieures (si assez large).
-    const LOGO_W: u16 = 11;
+    const LOGO_W: u16 = 9;
     if inner.width > 55 && inner.height >= 3 {
         let logo_area = Rect {
             x: inner.x + inner.width - LOGO_W - 1,
@@ -1964,6 +1965,20 @@ mod tests {
         fs::create_dir_all(dir.path().join("projects")).unwrap();
         let home = ClaudeHome::from_base(dir.path());
         (dir, home)
+    }
+
+    #[test]
+    fn claude_logo_is_exact_glyph() {
+        let logo = claude_logo_lines();
+        assert_eq!(logo.len(), 3);
+        let text: Vec<String> = logo
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .collect();
+        // Glyphe officiel de la boîte « What's new » de Claude Code.
+        assert_eq!(text, vec![" ▐▛███▜▌", "▝▜█████▛▘", "  ▘▘ ▝▝"]);
+        // Tient dans la zone réservée de l'en-tête (LOGO_W = 9).
+        assert!(text.iter().all(|l| l.chars().count() <= 9));
     }
 
     #[test]
