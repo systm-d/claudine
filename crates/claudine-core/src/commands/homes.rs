@@ -1,37 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use claudine_core::{
-    ClaudeHome, ClaudineConfig, ExportOptions, ImportOptions, RemapRule, RemapTable, Report, apply,
-    discover_homes, dry_run, export, scan_projects,
-};
-
-pub fn parse_maps(maps: &[String]) -> Result<RemapTable, String> {
-    let mut rules = Vec::new();
-    for m in maps {
-        let (from, to) = m
-            .split_once('=')
-            .ok_or_else(|| format!("--map invalide (attendu ANCIEN=NOUVEAU): {m}"))?;
-        rules.push(RemapRule {
-            from: from.to_string(),
-            to: to.to_string(),
-        });
-    }
-    Ok(RemapTable::new(rules))
-}
-
-pub fn format_report(report: &Report) -> String {
-    let mut out = String::from("Rapport :\n");
-    for (k, v) in &report.counts {
-        out.push_str(&format!("  {k}: {v}\n"));
-    }
-    if !report.warnings.is_empty() {
-        out.push_str(&format!("Avertissements ({}):\n", report.warnings.len()));
-        for w in &report.warnings {
-            out.push_str(&format!("  - {w}\n"));
-        }
-    }
-    out
-}
+use crate::{ClaudeHome, ClaudineConfig, discover_homes, scan_projects};
 
 /// Résout l'argument `--home` : étiquette d'une home découverte, ou chemin de
 /// système de fichiers. `None` retombe sur `ClaudeHome::discover()`.
@@ -67,7 +36,6 @@ pub fn run_homes() -> Result<(), String> {
         println!("Aucune home Claude découverte.");
         return Ok(());
     }
-    // La première est le défaut (cf. tri de discover_homes_in).
     for (i, home) in homes.iter().enumerate() {
         let n = scan_projects(home).map(|p| p.len()).unwrap_or(0);
         let mark = if i == 0 { "*" } else { " " };
@@ -110,55 +78,9 @@ pub fn run_homes_remove(label: String) -> Result<(), String> {
     Ok(())
 }
 
-pub fn run_export(out: PathBuf, no_history: bool, home_arg: Option<String>) -> Result<(), String> {
-    let home = resolve_home(home_arg.as_deref())?;
-    let opts = ExportOptions {
-        include_history: !no_history,
-    };
-    let report = export(&home, &out, &opts).map_err(|e| e.to_string())?;
-    print!("{}", format_report(&report));
-    println!("Bundle écrit : {}", out.display());
-    Ok(())
-}
-
-pub fn run_import(
-    bundle: PathBuf,
-    maps: Vec<String>,
-    dry_run_only: bool,
-    overwrite: bool,
-    home_arg: Option<String>,
-) -> Result<(), String> {
-    let home = resolve_home(home_arg.as_deref())?;
-    let table = parse_maps(&maps)?;
-    let opts = ImportOptions { overwrite };
-    let report = if dry_run_only {
-        dry_run(&bundle, &home, &table, &opts).map_err(|e| e.to_string())?
-    } else {
-        apply(&bundle, &home, &table, &opts).map_err(|e| e.to_string())?
-    };
-    print!("{}", format_report(&report));
-    if dry_run_only {
-        println!("(dry-run : rien n'a été écrit)");
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_maps_ok() {
-        let t = parse_maps(&["/home/old=/home/new".to_string()]).unwrap();
-        assert_eq!(t.rules.len(), 1);
-        assert_eq!(t.rules[0].from, "/home/old");
-        assert_eq!(t.rules[0].to, "/home/new");
-    }
-
-    #[test]
-    fn parse_maps_rejects_missing_equals() {
-        assert!(parse_maps(&["noeq".to_string()]).is_err());
-    }
 
     #[test]
     fn resolve_home_accepts_existing_path() {

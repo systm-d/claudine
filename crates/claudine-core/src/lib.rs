@@ -17,6 +17,9 @@ pub mod search;
 pub mod settings;
 pub mod tui;
 
+mod cli;
+mod commands;
+
 pub use config::{ClaudineConfig, RegisteredHome, config_path, merge_registered};
 pub use error::{CoreError, Report, Result};
 pub use export::{ExportOptions, export};
@@ -44,6 +47,20 @@ pub use remap::{RemapRule, RemapTable, rewrite_jsonl_line};
 pub use scan::{read_session_meta, scan_projects};
 pub use search::find_in_session;
 pub use settings::{FieldKind, FieldSpec, SettingsDoc, settings_catalog};
+
+use std::process::ExitCode;
+
+/// Parse les arguments, dispatch, et mappe l'erreur vers un code de sortie.
+pub fn run() -> ExitCode {
+    use clap::Parser;
+    match cli::Cli::parse().run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Erreur : {e:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
 #[cfg(test)]
 pub(crate) mod testkit {
