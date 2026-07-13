@@ -587,22 +587,28 @@ enum HomesAction {
 }
 
 impl Cli {
-    /// Dispatch mince — aucune logique ici. Conserve le type d'erreur `String`
-    /// des commandes (messages utilisateur français inchangés).
-    pub fn run(self) -> Result<(), String> {
+    /// Dispatch mince — aucune logique ici. Les commandes renvoient `Result<(), String>`
+    /// (messages utilisateur français inchangés) ; on les remonte en `anyhow::Error` à la
+    /// frontière applicative via `anyhow::Error::msg` (convention anyhow du template, spec §5).
+    pub fn run(self) -> anyhow::Result<()> {
         match self.command {
             // Invocation nue : lance la TUI interactive.
-            None => crate::tui::run().map_err(|e| e.to_string()),
+            None => crate::tui::run().map_err(anyhow::Error::msg),
             Some(Command::Export { out, no_history, home }) => {
-                commands::export::run_export(out, no_history, home)
+                commands::export::run_export(out, no_history, home).map_err(anyhow::Error::msg)
             }
             Some(Command::Import { bundle, maps, dry_run, overwrite, home }) => {
                 commands::import::run_import(bundle, maps, dry_run, overwrite, home)
+                    .map_err(anyhow::Error::msg)
             }
             Some(Command::Homes { action }) => match action {
-                None => commands::homes::run_homes(),
-                Some(HomesAction::Add { path, label }) => commands::homes::run_homes_add(path, label),
-                Some(HomesAction::Remove { label }) => commands::homes::run_homes_remove(label),
+                None => commands::homes::run_homes().map_err(anyhow::Error::msg),
+                Some(HomesAction::Add { path, label }) => {
+                    commands::homes::run_homes_add(path, label).map_err(anyhow::Error::msg)
+                }
+                Some(HomesAction::Remove { label }) => {
+                    commands::homes::run_homes_remove(label).map_err(anyhow::Error::msg)
+                }
             },
         }
     }
@@ -629,16 +635,14 @@ pub fn run() -> ExitCode {
     match cli::Cli::parse().run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("Erreur : {e}");
+            eprintln!("Erreur : {e:#}");
             ExitCode::FAILURE
         }
     }
 }
 ```
 
-*(`anyhow` est déclaré en dépendance pour la convention du template ; les commandes conservent `Result<(), String>` pour préserver à l'identique les messages d'erreur français. `anyhow` reste disponible pour du code futur — s'il déclenche un warning d'import inutilisé, ne pas l'importer : il n'est pas `use`d ici.)*
-
-> ⚠️ Si `cargo` signale `anyhow` comme dépendance inutilisée via `cargo-udeps`/clippy, ce n'est **pas** bloquant (une dépendance déclarée non utilisée ne produit pas de warning `-D warnings` par défaut). Ne pas retirer `anyhow` : la convention du template l'attend et la tâche 12/évolutions futures l'utiliseront.
+*(`anyhow` est bien utilisé : `Cli::run` renvoie `anyhow::Result<()>` et remonte les erreurs `String` des commandes via `anyhow::Error::msg`. Le préfixe français « Erreur : » et le code de sortie 1 sont préservés à l'identique — `{e:#}` sur une erreur sans source affiche le seul message.)*
 
 - [ ] **Step 8: Réécrire le binaire en shim + supprimer l'ancien `cli.rs`**
 
@@ -1143,20 +1147,17 @@ git commit -m "ci(pages): build Zola site and deploy to GitHub Pages"
 - Modify: `Cargo.toml` (version `0.1.0`)
 - Modify: `CHANGELOG.md` (entrée `[0.1.0]`)
 - Modify: `README.md` (badges CI/Pages, section install alignée, lien site)
-- Create: `crates/claudine/tests/cli.rs`
+- Modify: `crates/claudine/tests/cli.rs` (⚠️ existe déjà avec 2 tests — les CONSERVER, ajouter les nouveaux)
 
 **Interfaces:**
 - Consumes : tout ce qui précède.
 - Produces : release `0.1.0` prête (structure alignée, site, CI), tests d'intégration CLI.
 
-- [ ] **Step 1: Écrire le test d'intégration CLI (TDD — d'abord le test)**
+- [ ] **Step 1: Ajouter des tests d'intégration CLI (TDD — d'abord le test)**
 
-Créer `crates/claudine/tests/cli.rs` :
+`crates/claudine/tests/cli.rs` **existe déjà** et contient `bare_invocation_launches_tui` et `export_then_import_dry_run_roundtrip` — **les conserver tels quels**. Les imports `use assert_cmd::Command;` et `use predicates::str::contains;` sont déjà en tête. Ajouter à la fin du fichier ces trois tests déterministes (sans accès disque) :
 
 ```rust
-use assert_cmd::Command;
-use predicates::str::contains;
-
 #[test]
 fn prints_version() {
     Command::cargo_bin("claudine")
@@ -1168,12 +1169,15 @@ fn prints_version() {
 }
 
 #[test]
-fn homes_runs_without_subcommand() {
+fn help_lists_subcommands() {
     Command::cargo_bin("claudine")
         .unwrap()
-        .arg("homes")
+        .arg("--help")
         .assert()
-        .success();
+        .success()
+        .stdout(contains("export"))
+        .stdout(contains("import"))
+        .stdout(contains("homes"));
 }
 
 #[test]
@@ -1186,10 +1190,10 @@ fn unknown_flag_fails() {
 }
 ```
 
-- [ ] **Step 2: Lancer le test — il échoue sur la version (encore `0.0.2`)**
+- [ ] **Step 2: Lancer les tests — `prints_version` échoue (encore `0.0.2`)**
 
 Run: `cargo test -p claudine --test cli 2>&1 | tail -12`
-Expected: `prints_version` ÉCHOUE (`claudine 0.0.2` ≠ attendu `claudine 0.1.0`) ; les deux autres passent.
+Expected: `prints_version` ÉCHOUE (`claudine 0.0.2` ≠ attendu `claudine 0.1.0`) ; `help_lists_subcommands`, `unknown_flag_fails` et les 2 tests existants passent.
 
 - [ ] **Step 3: Bumper la version en `0.1.0`**
 
