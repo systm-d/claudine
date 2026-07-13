@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use claudine_core::{
+use crate::{
     ClaudeHome, ClaudineConfig, ExportOptions, Extensions, ImportOptions, MarketplaceSource,
     Project, RemapTable, SessionMeta, add_marketplace, apply as import_apply,
     decode_encoded_to_path, discover_homes, dry_run as import_dry_run, empty_trash, export,
@@ -3004,7 +3004,7 @@ mod tests {
         app.hooks_save();
         assert!(app.hooks_editor.is_none(), "fermé après enregistrement");
 
-        let groups = claudine_core::read_hook_groups(app.home());
+        let groups = crate::read_hook_groups(app.home());
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].event, "PreToolUse");
         assert_eq!(groups[0].commands[0].command, "echo hi");
@@ -3036,7 +3036,7 @@ mod tests {
         );
 
         // Aucune écriture ne doit avoir eu lieu.
-        let groups = claudine_core::read_hook_groups(app.home());
+        let groups = crate::read_hook_groups(app.home());
         assert!(groups.is_empty(), "rien écrit dans settings.json");
 
         // Cas passant : on renseigne la commande et on enregistre.
@@ -3050,7 +3050,7 @@ mod tests {
             app.hooks_editor.is_none(),
             "fermé après enregistrement valide"
         );
-        let groups = claudine_core::read_hook_groups(app.home());
+        let groups = crate::read_hook_groups(app.home());
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].commands[0].command, "echo ok");
     }
@@ -3087,7 +3087,7 @@ mod tests {
         app.mcp_save();
         assert!(app.mcp_editor.is_none(), "fermé après enregistrement");
 
-        let servers = claudine_core::read_user_mcp_servers(app.home());
+        let servers = crate::read_user_mcp_servers(app.home());
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0].name, "fs");
         assert_eq!(servers[0].command, "npx");
@@ -3134,7 +3134,7 @@ mod tests {
         app.plugins_toggle_save();
         assert!(app.plugins_toggle.is_none());
 
-        let ext = claudine_core::read_extensions(app.home());
+        let ext = crate::read_extensions(app.home());
         assert!(
             !ext.plugins
                 .iter()

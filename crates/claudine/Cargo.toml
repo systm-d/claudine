@@ -47,7 +47,6 @@ assets = [
 [dependencies]
 claudine-core = { path = "../claudine-core" }
 clap.workspace = true
-ratatui.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

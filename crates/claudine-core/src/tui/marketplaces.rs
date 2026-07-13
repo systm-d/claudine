@@ -2,7 +2,7 @@
 //! retrait (confirmation), mise à jour. Les opérations réseau (ajout/màj) sont
 //! exécutées en arrière-plan par `app.rs` ; ce module ne porte que l'état UI.
 
-use claudine_core::{Marketplace, PluginEntry, PluginManifestEntry};
+use crate::{Marketplace, PluginEntry, PluginManifestEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MktMode {
@@ -161,7 +161,7 @@ impl PluginCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claudine_core::{Marketplace, MarketplaceSource};
+    use crate::{Marketplace, MarketplaceSource};
 
     fn mk(name: &str) -> Marketplace {
         Marketplace {
@@ -217,7 +217,7 @@ mod tests {
         assert!(m.selected_name().is_none());
     }
 
-    use claudine_core::{PluginEntry, PluginManifestEntry};
+    use crate::{PluginEntry, PluginManifestEntry};
 
     fn pm(name: &str, desc: Option<&str>) -> PluginManifestEntry {
         PluginManifestEntry {

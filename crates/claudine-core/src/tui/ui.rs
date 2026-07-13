@@ -14,7 +14,7 @@ use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
 use crate::tui::marketplaces::MktMode;
 use crate::tui::marketplaces::PluginCatalog;
 use crate::tui::mcp_editor::{McpEdit, McpLevel, McpRow};
-use claudine_core::{MarketplaceSource, McpTransport, scan_projects};
+use crate::{MarketplaceSource, McpTransport, scan_projects};
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
@@ -1991,7 +1991,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claudine_core::ClaudeHome;
+    use crate::ClaudeHome;
     use ratatui::{Terminal, backend::TestBackend};
     use std::fs;
 
@@ -2085,7 +2085,7 @@ mod tests {
     /// rend le cadre principal ET le popup du sélecteur sans paniquer.
     #[test]
     fn smoke_renders_home_picker() {
-        use claudine_core::discover_homes_in;
+        use crate::discover_homes_in;
 
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();

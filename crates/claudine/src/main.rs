@@ -1,5 +1,4 @@
 mod cli;
-mod tui;
 
 use std::path::PathBuf;
 
@@ -71,7 +70,7 @@ fn main() {
         // Invocation nue : lance la TUI interactive. Le terminal est toujours
         // restauré (y compris sur erreur/panique) avant que l'erreur ne soit
         // affichée par le bloc ci-dessous.
-        None => tui::run().map_err(|e| e.to_string()),
+        None => claudine_core::tui::run().map_err(|e| e.to_string()),
         Some(Command::Export {
             out,
             no_history,

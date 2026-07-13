@@ -15,6 +15,7 @@ pub mod remap;
 pub mod scan;
 pub mod search;
 pub mod settings;
+pub mod tui;
 
 pub use config::{ClaudineConfig, RegisteredHome, config_path, merge_registered};
 pub use error::{CoreError, Report, Result};

@@ -1,7 +1,7 @@
 //! Éditeur de serveurs MCP dédié (modal) : navigation serveurs → serveur,
 //! édition des champs selon le transport.
 
-use claudine_core::{McpServer, McpTransport};
+use crate::{McpServer, McpTransport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpLevel {
@@ -336,7 +336,7 @@ fn split_pair(buf: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claudine_core::{McpServer, McpTransport};
+    use crate::{McpServer, McpTransport};
 
     fn sample() -> Vec<McpServer> {
         vec![McpServer {

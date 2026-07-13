@@ -22,7 +22,7 @@ use ratatui::crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 
-use claudine_core::discover_homes;
+use crate::discover_homes;
 
 use app::{App, PickerMode, Section};
 

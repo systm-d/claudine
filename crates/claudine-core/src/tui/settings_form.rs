@@ -1,10 +1,10 @@
 //! Formulaire d'édition des `settings.json` Claude Code de la home active.
-//! S'appuie sur `claudine_core::SettingsDoc` (qui préserve les clés non
+//! S'appuie sur `crate::SettingsDoc` (qui préserve les clés non
 //! modélisées) et `settings_catalog()` (la liste des champs exposés).
 
 use std::path::PathBuf;
 
-use claudine_core::{ClaudeHome, FieldKind, FieldSpec, SettingsDoc, settings_catalog};
+use crate::{ClaudeHome, FieldKind, FieldSpec, SettingsDoc, settings_catalog};
 
 /// État d'édition d'une liste / map (StringList et KeyValue).
 pub struct ListEdit {

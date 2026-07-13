@@ -15,6 +15,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tar.workspace = true
 flate2.workspace = true
+ratatui.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
