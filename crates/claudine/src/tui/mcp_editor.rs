@@ -185,7 +185,9 @@ impl McpEditor {
             return;
         };
         match (s.transport, row) {
-            (McpTransport::Stdio, Some(McpRow::Env(_))) => s.env.push((String::new(), String::new())),
+            (McpTransport::Stdio, Some(McpRow::Env(_))) => {
+                s.env.push((String::new(), String::new()))
+            }
             (McpTransport::Stdio, _) => s.args.push(String::new()),
             (_, _) => s.headers.push((String::new(), String::new())),
         }
@@ -423,7 +425,10 @@ mod tests {
             e.input_char(c);
         }
         e.input_commit();
-        assert_eq!(e.servers[0].env, vec![("TOKEN".to_string(), "abc".to_string())]);
+        assert_eq!(
+            e.servers[0].env,
+            vec![("TOKEN".to_string(), "abc".to_string())]
+        );
     }
 
     #[test]

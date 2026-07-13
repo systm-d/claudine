@@ -6,7 +6,11 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "claudine", version, about = "Navigateur/gestionnaire des données Claude Code")]
+#[command(
+    name = "claudine",
+    version,
+    about = "Navigateur/gestionnaire des données Claude Code"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

@@ -2,44 +2,47 @@
 
 pub mod config;
 pub mod error;
-pub mod home;
-pub mod pathcodec;
-pub mod model;
-pub mod scan;
-pub mod manifest;
 pub mod export;
-pub mod remap;
-pub mod import;
+pub mod extensions;
+pub mod home;
 pub mod housekeeping;
+pub mod import;
+pub mod manifest;
+pub mod marketplaces;
+pub mod model;
+pub mod pathcodec;
+pub mod remap;
+pub mod scan;
 pub mod search;
 pub mod settings;
-pub mod extensions;
-pub mod marketplaces;
 
-pub use config::{config_path, merge_registered, ClaudineConfig, RegisteredHome};
+pub use config::{ClaudineConfig, RegisteredHome, config_path, merge_registered};
 pub use error::{CoreError, Report, Result};
-pub use home::{discover_homes, discover_homes_in, ClaudeHome};
-pub use pathcodec::{decode_encoded_to_path, encode_cwd};
-pub use model::{Project, SessionMeta};
-pub use scan::{read_session_meta, scan_projects};
-pub use manifest::{Manifest, ManifestProject, SCHEMA_VERSION};
-pub use export::{export, ExportOptions};
-pub use remap::{rewrite_jsonl_line, RemapRule, RemapTable};
-pub use import::{apply, dry_run, read_manifest, ImportOptions};
-pub use housekeeping::{
-    empty_trash, list_trash, move_session, purge_trash_item, restore_trash_entry, trash_project,
-    trash_session, TrashItem,
-};
-pub use search::find_in_session;
-pub use settings::{settings_catalog, FieldKind, FieldSpec, SettingsDoc};
+pub use export::{ExportOptions, export};
 pub use extensions::{
-    read_extensions, read_hook_groups, write_hooks, set_plugin_enabled, read_installed_plugins, uninstall_plugin, mcp_config_path, read_user_mcp_servers, write_user_mcp_servers, Extensions, HookCommand, HookEntry, HookGroup, McpEntry, McpServer, McpTransport, PluginEntry,
+    Extensions, HookCommand, HookEntry, HookGroup, McpEntry, McpServer, McpTransport, PluginEntry,
+    mcp_config_path, read_extensions, read_hook_groups, read_installed_plugins,
+    read_user_mcp_servers, set_plugin_enabled, uninstall_plugin, write_hooks,
+    write_user_mcp_servers,
 };
+pub use home::{ClaudeHome, discover_homes, discover_homes_in};
+pub use housekeeping::{
+    TrashItem, empty_trash, list_trash, move_session, purge_trash_item, restore_trash_entry,
+    trash_project, trash_session,
+};
+pub use import::{ImportOptions, apply, dry_run, read_manifest};
+pub use manifest::{Manifest, ManifestProject, SCHEMA_VERSION};
 pub use marketplaces::{
+    Marketplace, MarketplaceManifest, MarketplaceSource, PluginManifestEntry, PluginSource,
     add_marketplace, install_plugin, iso8601_utc, read_marketplace_manifest, read_marketplaces,
-    remove_marketplace, update_marketplace, Marketplace, MarketplaceManifest,
-    MarketplaceSource, PluginManifestEntry, PluginSource,
+    remove_marketplace, update_marketplace,
 };
+pub use model::{Project, SessionMeta};
+pub use pathcodec::{decode_encoded_to_path, encode_cwd};
+pub use remap::{RemapRule, RemapTable, rewrite_jsonl_line};
+pub use scan::{read_session_meta, scan_projects};
+pub use search::find_in_session;
+pub use settings::{FieldKind, FieldSpec, SettingsDoc, settings_catalog};
 
 #[cfg(test)]
 pub(crate) mod testkit {

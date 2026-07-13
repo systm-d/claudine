@@ -292,7 +292,11 @@ mod tests {
         vec![HookGroup {
             event: "PreToolUse".into(),
             matcher: Some("Bash".into()),
-            commands: vec![HookCommand { kind: "command".into(), command: "echo a".into(), timeout: None }],
+            commands: vec![HookCommand {
+                kind: "command".into(),
+                command: "echo a".into(),
+                timeout: None,
+            }],
         }]
     }
 
@@ -361,7 +365,11 @@ mod tests {
         let mut e = HooksEditor::new(vec![HookGroup {
             event: "Stop".into(),
             matcher: None,
-            commands: vec![HookCommand { kind: "command".into(), command: "x".into(), timeout: None }],
+            commands: vec![HookCommand {
+                kind: "command".into(),
+                command: "x".into(),
+                timeout: None,
+            }],
         }]);
         e.enter();
         e.field_idx = 2; // la commande

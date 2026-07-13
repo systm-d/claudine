@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use claudine_core::{settings_catalog, ClaudeHome, FieldKind, FieldSpec, SettingsDoc};
+use claudine_core::{ClaudeHome, FieldKind, FieldSpec, SettingsDoc, settings_catalog};
 
 /// État d'édition d'une liste / map (StringList et KeyValue).
 pub struct ListEdit {
@@ -90,7 +90,11 @@ impl SettingsForm {
 
     /// JSON brut courant (reflète les éditions non enregistrées).
     pub fn raw_lines(&self) -> Vec<String> {
-        self.doc.to_pretty().lines().map(|l| l.to_string()).collect()
+        self.doc
+            .to_pretty()
+            .lines()
+            .map(|l| l.to_string())
+            .collect()
     }
 
     /// Valeur affichable d'un champ.
@@ -176,15 +180,26 @@ impl SettingsForm {
             FieldKind::Enum(opts) => self.cycle_enum(&spec.path, opts, true),
             FieldKind::Text | FieldKind::Number => {
                 let cur = if matches!(spec.kind, FieldKind::Number) {
-                    self.doc.get_i64(&spec.path).map(|n| n.to_string()).unwrap_or_default()
+                    self.doc
+                        .get_i64(&spec.path)
+                        .map(|n| n.to_string())
+                        .unwrap_or_default()
                 } else {
-                    self.doc.get_str(&spec.path).map(|s| s.to_string()).unwrap_or_default()
+                    self.doc
+                        .get_str(&spec.path)
+                        .map(|s| s.to_string())
+                        .unwrap_or_default()
                 };
                 self.edit = Edit::Scalar(cur);
             }
             FieldKind::StringList => {
                 let items = self.doc.get_str_list(&spec.path).unwrap_or_default();
-                self.edit = Edit::List(ListEdit { items, idx: 0, input: None, adding: false });
+                self.edit = Edit::List(ListEdit {
+                    items,
+                    idx: 0,
+                    input: None,
+                    adding: false,
+                });
             }
             FieldKind::KeyValue => {
                 let items = self
@@ -193,7 +208,12 @@ impl SettingsForm {
                     .into_iter()
                     .map(|(k, v)| format!("{k}={v}"))
                     .collect();
-                self.edit = Edit::List(ListEdit { items, idx: 0, input: None, adding: false });
+                self.edit = Edit::List(ListEdit {
+                    items,
+                    idx: 0,
+                    input: None,
+                    adding: false,
+                });
             }
         }
     }
@@ -216,7 +236,11 @@ impl SettingsForm {
         let cur = self.doc.get_str(path).unwrap_or("");
         let pos = opts.iter().position(|o| o == cur).unwrap_or(0);
         let n = opts.len();
-        let next = if forward { (pos + 1) % n } else { (pos + n - 1) % n };
+        let next = if forward {
+            (pos + 1) % n
+        } else {
+            (pos + n - 1) % n
+        };
         let val = opts[next].clone();
         if val.is_empty() {
             self.doc.unset(path);

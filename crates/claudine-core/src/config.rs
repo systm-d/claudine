@@ -105,11 +105,7 @@ impl ClaudineConfig {
         }
 
         let key = dedup_key(&path);
-        if let Some(existing) = self
-            .homes
-            .iter_mut()
-            .find(|h| dedup_key(&h.path) == key)
-        {
+        if let Some(existing) = self.homes.iter_mut().find(|h| dedup_key(&h.path) == key) {
             existing.label = label;
             return;
         }
@@ -126,10 +122,7 @@ impl ClaudineConfig {
 /// les homes enregistrées absentes (par chemin canonique). Les homes
 /// enregistrées sont incluses même si elles ne passeraient pas l'heuristique de
 /// scan automatique.
-pub fn merge_registered(
-    homes: Vec<ClaudeHome>,
-    registered: &[RegisteredHome],
-) -> Vec<ClaudeHome> {
+pub fn merge_registered(homes: Vec<ClaudeHome>, registered: &[RegisteredHome]) -> Vec<ClaudeHome> {
     let mut out = homes;
     let mut seen: HashSet<PathBuf> = out.iter().map(|h| dedup_key(&h.base)).collect();
 
@@ -171,11 +164,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Fichier absent.
         let missing = dir.path().join("nope.json");
-        assert_eq!(ClaudineConfig::load_from(&missing), ClaudineConfig::default());
+        assert_eq!(
+            ClaudineConfig::load_from(&missing),
+            ClaudineConfig::default()
+        );
         // Fichier non parsable.
         let garbage = dir.path().join("bad.json");
         std::fs::write(&garbage, "pas du json {").unwrap();
-        assert_eq!(ClaudineConfig::load_from(&garbage), ClaudineConfig::default());
+        assert_eq!(
+            ClaudineConfig::load_from(&garbage),
+            ClaudineConfig::default()
+        );
     }
 
     #[test]

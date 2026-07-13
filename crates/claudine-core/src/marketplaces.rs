@@ -32,10 +32,14 @@ impl MarketplaceSource {
             return Some(MarketplaceSource::Git { url: s.to_string() });
         }
         if Path::new(s).exists() {
-            return Some(MarketplaceSource::Local { path: PathBuf::from(s) });
+            return Some(MarketplaceSource::Local {
+                path: PathBuf::from(s),
+            });
         }
         if looks_like_owner_repo(s) {
-            return Some(MarketplaceSource::Github { repo: s.to_string() });
+            return Some(MarketplaceSource::Github {
+                repo: s.to_string(),
+            });
         }
         None
     }
@@ -85,7 +89,10 @@ impl MarketplaceSource {
             }
             MarketplaceSource::Local { path } => {
                 m.insert("source".into(), Value::String("local".into()));
-                m.insert("path".into(), Value::String(path.to_string_lossy().into_owned()));
+                m.insert(
+                    "path".into(),
+                    Value::String(path.to_string_lossy().into_owned()),
+                );
             }
         }
         Value::Object(m)
@@ -225,7 +232,9 @@ fn parse_plugin_source(v: &Value) -> Option<PluginSource> {
         if s.is_empty() {
             return None;
         }
-        return Some(PluginSource::RelativePath { path: s.to_string() });
+        return Some(PluginSource::RelativePath {
+            path: s.to_string(),
+        });
     }
     let o = v.as_object()?;
     match o.get("source").and_then(|s| s.as_str())? {
@@ -258,14 +267,20 @@ fn parse_manifest(v: &Value) -> Option<MarketplaceManifest> {
             let po = p.as_object()?;
             Some(PluginManifestEntry {
                 name: po.get("name")?.as_str()?.to_string(),
-                description: po.get("description").and_then(|d| d.as_str()).map(String::from),
+                description: po
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(String::from),
                 source: po.get("source").and_then(parse_plugin_source),
             })
         })
         .collect();
     Some(MarketplaceManifest {
         name,
-        description: o.get("description").and_then(|d| d.as_str()).map(String::from),
+        description: o
+            .get("description")
+            .and_then(|d| d.as_str())
+            .map(String::from),
         owner_name: o
             .get("owner")
             .and_then(|ow| ow.as_object())
@@ -379,7 +394,9 @@ mod git {
     /// sur le commit épinglé. Refuse un commit ressemblant à une option.
     pub fn checkout(dir: &Path, commit: &str) -> Result<()> {
         if commit.starts_with('-') {
-            return Err(CoreError::Marketplace(format!("commit invalide : {commit}")));
+            return Err(CoreError::Marketplace(format!(
+                "commit invalide : {commit}"
+            )));
         }
         let mut c = Command::new("git");
         c.arg("-C")
@@ -514,7 +531,9 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
         )));
     }
     if !is_safe_name(plugin) {
-        return Err(CoreError::Marketplace(format!("nom de plugin invalide : {plugin}")));
+        return Err(CoreError::Marketplace(format!(
+            "nom de plugin invalide : {plugin}"
+        )));
     }
 
     // 1. Localiser l'entrée du plugin et sa source.
@@ -524,12 +543,16 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
         .iter()
         .find(|p| p.name == plugin)
         .ok_or_else(|| {
-            CoreError::Marketplace(format!("plugin introuvable au catalogue : {plugin}@{marketplace}"))
+            CoreError::Marketplace(format!(
+                "plugin introuvable au catalogue : {plugin}@{marketplace}"
+            ))
         })?
         .source
         .clone()
         .ok_or_else(|| {
-            CoreError::Marketplace(format!("source de plugin non gérée : {plugin}@{marketplace}"))
+            CoreError::Marketplace(format!(
+                "source de plugin non gérée : {plugin}@{marketplace}"
+            ))
         })?;
 
     let cache_root = home.plugins_dir().join("cache");
@@ -539,7 +562,9 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
         PluginSource::RelativePath { path } => {
             let rel = path.trim_start_matches("./");
             if rel.is_empty() || rel.split('/').any(|c| c == ".." || c.is_empty()) {
-                return Err(CoreError::Marketplace(format!("chemin de plugin invalide : {path}")));
+                return Err(CoreError::Marketplace(format!(
+                    "chemin de plugin invalide : {path}"
+                )));
             }
             let mkt_dir = marketplaces_dir(home).join(marketplace);
             let dir = mkt_dir.join(rel);
@@ -551,7 +576,8 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
             }
             // I1 : la source pourrait être un lien symbolique pointant hors de la marketplace.
             // On canonicalise les deux chemins pour comparer les cibles réelles.
-            let canon_mkt = std::fs::canonicalize(&mkt_dir).map_err(|e| CoreError::io(&mkt_dir, e))?;
+            let canon_mkt =
+                std::fs::canonicalize(&mkt_dir).map_err(|e| CoreError::io(&mkt_dir, e))?;
             let canon_dir = std::fs::canonicalize(&dir).map_err(|e| CoreError::io(&dir, e))?;
             if !canon_dir.starts_with(&canon_mkt) {
                 return Err(CoreError::Marketplace(
@@ -560,7 +586,11 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
             }
             (canon_dir, None)
         }
-        PluginSource::Git { url, commit, subdir } => {
+        PluginSource::Git {
+            url,
+            commit,
+            subdir,
+        } => {
             std::fs::create_dir_all(&cache_root).map_err(|e| CoreError::io(&cache_root, e))?;
             let ts = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -571,7 +601,8 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
                 let _ = std::fs::remove_dir_all(&temp);
             }
             // Clone complet + checkout du commit épinglé ; nettoie le temp si échec.
-            if let Err(e) = git::clone_full(url, &temp).and_then(|()| git::checkout(&temp, commit)) {
+            if let Err(e) = git::clone_full(url, &temp).and_then(|()| git::checkout(&temp, commit))
+            {
                 let _ = std::fs::remove_dir_all(&temp);
                 return Err(e);
             }
@@ -581,7 +612,9 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
                     let sd = sd.trim_start_matches("./");
                     if sd.split('/').any(|c| c == "..") {
                         let _ = std::fs::remove_dir_all(&temp);
-                        return Err(CoreError::Marketplace(format!("sous-dossier invalide : {sd}")));
+                        return Err(CoreError::Marketplace(format!(
+                            "sous-dossier invalide : {sd}"
+                        )));
                     }
                     temp.join(sd)
                 }
@@ -624,7 +657,11 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
     // pas un nom sûr (pas de séparateur de chemin ni de `..`).
     let version = {
         let v = read_plugin_version(&src).unwrap_or_else(|| "unknown".to_string());
-        if is_safe_name(&v) { v } else { "unknown".to_string() }
+        if is_safe_name(&v) {
+            v
+        } else {
+            "unknown".to_string()
+        }
     };
 
     // 4. Copier vers cache/<mkt>/<plugin>/<version>/ (confiné, idempotent).
@@ -632,7 +669,9 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
         let dest = cache_root.join(marketplace).join(plugin).join(&version);
         // Garde lexicale ET composants : rejette tout `..` dans le chemin construit.
         if !dest.starts_with(&cache_root)
-            || dest.components().any(|c| c == std::path::Component::ParentDir)
+            || dest
+                .components()
+                .any(|c| c == std::path::Component::ParentDir)
         {
             return Err(CoreError::Marketplace("destination hors cache".to_string()));
         }
@@ -657,7 +696,10 @@ pub fn install_plugin(home: &ClaudeHome, marketplace: &str, plugin: &str) -> Res
     let now = iso8601_utc(SystemTime::now());
     let mut entry = Map::new();
     entry.insert("scope".into(), Value::String("user".into()));
-    entry.insert("installPath".into(), Value::String(dest.to_string_lossy().into_owned()));
+    entry.insert(
+        "installPath".into(),
+        Value::String(dest.to_string_lossy().into_owned()),
+    );
     entry.insert("version".into(), Value::String(version.clone()));
     entry.insert("installedAt".into(), Value::String(now.clone()));
     entry.insert("lastUpdated".into(), Value::String(now));
@@ -696,7 +738,10 @@ pub fn update_marketplace(home: &ClaudeHome, name: &str) -> Result<()> {
         )));
     }
     git::pull(&dir)?;
-    doc.set(&[name, "lastUpdated"], Value::String(iso8601_utc(SystemTime::now())));
+    doc.set(
+        &[name, "lastUpdated"],
+        Value::String(iso8601_utc(SystemTime::now())),
+    );
     doc.save(&path)
 }
 
@@ -767,7 +812,9 @@ mod tests {
         let list = read_marketplaces(&home).unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "claude-plugins-official");
-        assert!(matches!(&list[0].source, MarketplaceSource::Github { repo } if repo == "anthropics/claude-plugins-official"));
+        assert!(
+            matches!(&list[0].source, MarketplaceSource::Github { repo } if repo == "anthropics/claude-plugins-official")
+        );
         assert_eq!(list[0].last_updated, "2026-06-25T07:54:22.246Z");
     }
 
@@ -824,14 +871,18 @@ mod tests {
     }
 
     fn valid_manifest(name: &str) -> String {
-        format!(r#"{{"name":"{name}","owner":{{"name":"Acme"}},"plugins":[{{"name":"p1","description":"d"}}]}}"#)
+        format!(
+            r#"{{"name":"{name}","owner":{{"name":"Acme"}},"plugins":[{{"name":"p1","description":"d"}}]}}"#
+        )
     }
 
     #[test]
     fn add_marketplace_local_clones_validates_registers() {
         let repo = make_repo(&valid_manifest("acme-mkt"));
         let (_d, home) = home();
-        let src = MarketplaceSource::Local { path: repo.path().to_path_buf() };
+        let src = MarketplaceSource::Local {
+            path: repo.path().to_path_buf(),
+        };
 
         let mk = add_marketplace(&home, src).unwrap();
         assert_eq!(mk.name, "acme-mkt");
@@ -853,10 +904,15 @@ mod tests {
     fn add_marketplace_rejects_invalid_manifest_without_writing() {
         let repo = make_repo(r#"{"plugins":[]}"#); // pas de "name"
         let (_d, home) = home();
-        let src = MarketplaceSource::Local { path: repo.path().to_path_buf() };
+        let src = MarketplaceSource::Local {
+            path: repo.path().to_path_buf(),
+        };
 
         assert!(add_marketplace(&home, src).is_err());
-        assert!(read_marketplaces(&home).unwrap().is_empty(), "registre non écrit");
+        assert!(
+            read_marketplaces(&home).unwrap().is_empty(),
+            "registre non écrit"
+        );
         // Aucun dossier résiduel (tmp nettoyé).
         let mdir = home.plugins_dir().join("marketplaces");
         if mdir.exists() {
@@ -868,8 +924,19 @@ mod tests {
     fn add_marketplace_duplicate_is_rejected() {
         let repo = make_repo(&valid_manifest("dup"));
         let (_d, home) = home();
-        add_marketplace(&home, MarketplaceSource::Local { path: repo.path().to_path_buf() }).unwrap();
-        let again = add_marketplace(&home, MarketplaceSource::Local { path: repo.path().to_path_buf() });
+        add_marketplace(
+            &home,
+            MarketplaceSource::Local {
+                path: repo.path().to_path_buf(),
+            },
+        )
+        .unwrap();
+        let again = add_marketplace(
+            &home,
+            MarketplaceSource::Local {
+                path: repo.path().to_path_buf(),
+            },
+        );
         assert!(again.is_err());
         assert_eq!(read_marketplaces(&home).unwrap().len(), 1);
     }
@@ -878,7 +945,13 @@ mod tests {
     fn remove_marketplace_clears_entry_and_dir() {
         let repo = make_repo(&valid_manifest("gone"));
         let (_d, home) = home();
-        add_marketplace(&home, MarketplaceSource::Local { path: repo.path().to_path_buf() }).unwrap();
+        add_marketplace(
+            &home,
+            MarketplaceSource::Local {
+                path: repo.path().to_path_buf(),
+            },
+        )
+        .unwrap();
         let dir = home.plugins_dir().join("marketplaces").join("gone");
         assert!(dir.exists());
 
@@ -897,7 +970,13 @@ mod tests {
     fn update_marketplace_pulls_new_commit() {
         let repo = make_repo(&valid_manifest("upd"));
         let (_d, home) = home();
-        add_marketplace(&home, MarketplaceSource::Local { path: repo.path().to_path_buf() }).unwrap();
+        add_marketplace(
+            &home,
+            MarketplaceSource::Local {
+                path: repo.path().to_path_buf(),
+            },
+        )
+        .unwrap();
 
         // Nouveau commit dans la source.
         std::fs::write(repo.path().join("NEW.txt"), "x").unwrap();
@@ -905,18 +984,21 @@ mod tests {
         git(&["commit", "-q", "-m", "more"], repo.path());
 
         update_marketplace(&home, "upd").unwrap();
-        assert!(home
-            .plugins_dir()
-            .join("marketplaces")
-            .join("upd")
-            .join("NEW.txt")
-            .exists());
+        assert!(
+            home.plugins_dir()
+                .join("marketplaces")
+                .join("upd")
+                .join("NEW.txt")
+                .exists()
+        );
     }
 
     #[test]
     fn add_marketplace_rejects_dash_url() {
         let (_d, home) = home();
-        let src = MarketplaceSource::Git { url: "--upload-pack=evil".into() };
+        let src = MarketplaceSource::Git {
+            url: "--upload-pack=evil".into(),
+        };
         assert!(add_marketplace(&home, src).is_err());
         assert!(read_marketplaces(&home).unwrap().is_empty());
     }
@@ -966,7 +1048,9 @@ mod tests {
     fn add_marketplace_blocks_ext_transport() {
         // `protocol.ext.allow=never` doit faire échouer le transport ext:: (sinon RCE).
         let (_d, home) = home();
-        let src = MarketplaceSource::Git { url: "ext::sh -c true".into() };
+        let src = MarketplaceSource::Git {
+            url: "ext::sh -c true".into(),
+        };
         assert!(add_marketplace(&home, src).is_err());
         assert!(read_marketplaces(&home).unwrap().is_empty());
     }
@@ -1016,10 +1100,17 @@ mod tests {
 
         // Entrée installed_plugins.json (scope user, installPath, version).
         let doc = SettingsDoc::load(&home.plugins_dir().join("installed_plugins.json")).unwrap();
-        let arr = doc.get(&["plugins", "p@m"]).and_then(|v| v.as_array()).cloned().unwrap();
+        let arr = doc
+            .get(&["plugins", "p@m"])
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0].get("scope").and_then(|s| s.as_str()), Some("user"));
-        assert_eq!(arr[0].get("version").and_then(|s| s.as_str()), Some("1.2.3"));
+        assert_eq!(
+            arr[0].get("version").and_then(|s| s.as_str()),
+            Some("1.2.3")
+        );
         assert_eq!(
             arr[0].get("installPath").and_then(|s| s.as_str()),
             Some(dest.to_string_lossy().as_ref())
@@ -1035,7 +1126,12 @@ mod tests {
         let (_d, home) = home();
         seed_rel_marketplace(&home, "m", "p", None);
         install_plugin(&home, "m", "p").unwrap();
-        assert!(home.plugins_dir().join("cache/m/p/unknown").join("SKILL.md").is_file());
+        assert!(
+            home.plugins_dir()
+                .join("cache/m/p/unknown")
+                .join("SKILL.md")
+                .is_file()
+        );
     }
 
     #[test]
@@ -1064,7 +1160,10 @@ mod tests {
 
     /// Dépôt git « source de plugin » avec plugin.json (version) + fichier, dans un
     /// sous-dossier optionnel. Renvoie (tempdir, chemin, sha HEAD).
-    fn make_plugin_repo(subdir: Option<&str>, version: &str) -> (tempfile::TempDir, String, String) {
+    fn make_plugin_repo(
+        subdir: Option<&str>,
+        version: &str,
+    ) -> (tempfile::TempDir, String, String) {
         let d = tempfile::tempdir().unwrap();
         let root = d.path().to_path_buf();
         git(&["init", "-q", "-b", "main"], &root);
@@ -1076,7 +1175,11 @@ mod tests {
         };
         let cp = base.join(".claude-plugin");
         std::fs::create_dir_all(&cp).unwrap();
-        std::fs::write(cp.join("plugin.json"), format!(r#"{{"name":"gp","version":"{version}"}}"#)).unwrap();
+        std::fs::write(
+            cp.join("plugin.json"),
+            format!(r#"{{"name":"gp","version":"{version}"}}"#),
+        )
+        .unwrap();
         std::fs::write(base.join("SKILL.md"), "git-body").unwrap();
         git(&["add", "-A"], &root);
         git(&["commit", "-q", "-m", "init"], &root);
@@ -1086,9 +1189,14 @@ mod tests {
 
     /// Écrit une marketplace fictive dont le plugin `gp` a une source git donnée.
     fn seed_git_marketplace(home: &ClaudeHome, mkt: &str, source_json: &str) {
-        let cp = home.plugins_dir().join("marketplaces").join(mkt).join(".claude-plugin");
+        let cp = home
+            .plugins_dir()
+            .join("marketplaces")
+            .join(mkt)
+            .join(".claude-plugin");
         std::fs::create_dir_all(&cp).unwrap();
-        let manifest = format!(r#"{{"name":"{mkt}","plugins":[{{"name":"gp","source":{source_json}}}]}}"#);
+        let manifest =
+            format!(r#"{{"name":"{mkt}","plugins":[{{"name":"gp","source":{source_json}}}]}}"#);
         std::fs::write(cp.join("marketplace.json"), manifest).unwrap();
     }
 
@@ -1096,12 +1204,19 @@ mod tests {
     fn install_plugin_git_url_clones_and_pins() {
         let (_repo, url, sha) = make_plugin_repo(None, "3.0.0");
         let (_d, home) = home();
-        seed_git_marketplace(&home, "m", &format!(r#"{{"source":"url","url":"{url}","sha":"{sha}"}}"#));
+        seed_git_marketplace(
+            &home,
+            "m",
+            &format!(r#"{{"source":"url","url":"{url}","sha":"{sha}"}}"#),
+        );
 
         install_plugin(&home, "m", "gp").unwrap();
 
         let dest = home.plugins_dir().join("cache/m/gp/3.0.0");
-        assert_eq!(std::fs::read_to_string(dest.join("SKILL.md")).unwrap(), "git-body");
+        assert_eq!(
+            std::fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+            "git-body"
+        );
         let sdoc = SettingsDoc::load(&home.settings_file()).unwrap();
         assert_eq!(sdoc.get_bool(&["enabledPlugins", "gp@m"]), Some(true));
         // Aucun dossier temporaire résiduel.
@@ -1119,7 +1234,9 @@ mod tests {
         seed_git_marketplace(
             &home,
             "m",
-            &format!(r#"{{"source":"git-subdir","url":"{url}","path":"plugins/gp","sha":"{sha}"}}"#),
+            &format!(
+                r#"{{"source":"git-subdir","url":"{url}","path":"plugins/gp","sha":"{sha}"}}"#
+            ),
         );
 
         install_plugin(&home, "m", "gp").unwrap();
@@ -1136,7 +1253,9 @@ mod tests {
         seed_git_marketplace(
             &home,
             "m",
-            &format!(r#"{{"source":"url","url":"{url}","sha":"0000000000000000000000000000000000000000"}}"#),
+            &format!(
+                r#"{{"source":"url","url":"{url}","sha":"0000000000000000000000000000000000000000"}}"#
+            ),
         );
 
         assert!(install_plugin(&home, "m", "gp").is_err());
@@ -1169,11 +1288,17 @@ mod tests {
 
         // Le plugin doit atterrir dans unknown/, pas dans le chemin malicieux.
         let good_dest = cache_root.join("m").join("p").join("unknown");
-        assert!(good_dest.join("SKILL.md").is_file(), "SKILL.md dans cache/.../unknown/");
+        assert!(
+            good_dest.join("SKILL.md").is_file(),
+            "SKILL.md dans cache/.../unknown/"
+        );
 
         // Le chemin malicieux (../../../../pwned) ne doit pas exister sous cache.
         let bad_dest = cache_root.join("../../../../pwned");
-        assert!(!bad_dest.exists(), "aucun répertoire hors cache créé par la version malicieuse");
+        assert!(
+            !bad_dest.exists(),
+            "aucun répertoire hors cache créé par la version malicieuse"
+        );
 
         // Le sentinelle créé manuellement (si accessible) ne doit pas avoir été supprimé.
         // (Il n'existe pas dans ce test car on ne le crée pas — vérification indirecte suffisante.)
@@ -1210,7 +1335,10 @@ mod tests {
 
         // L'installation doit échouer car la source est hors de la marketplace (symlink).
         let result = install_plugin(&home, "m", "evil");
-        assert!(result.is_err(), "doit rejeter un source symlinké vers l'extérieur");
+        assert!(
+            result.is_err(),
+            "doit rejeter un source symlinké vers l'extérieur"
+        );
 
         // Rien ne doit avoir été copié dans le cache.
         let cache = home.plugins_dir().join("cache");
@@ -1237,23 +1365,41 @@ mod tests {
         let by = |n: &str| m.plugins.iter().find(|p| p.name == n).unwrap();
         assert_eq!(
             by("rel").source,
-            Some(PluginSource::RelativePath { path: "./plugins/rel".into() })
+            Some(PluginSource::RelativePath {
+                path: "./plugins/rel".into()
+            })
         );
         assert_eq!(
             by("u").source,
-            Some(PluginSource::Git { url: "https://x/r.git".into(), commit: "abc".into(), subdir: Some("sub".into()) })
+            Some(PluginSource::Git {
+                url: "https://x/r.git".into(),
+                commit: "abc".into(),
+                subdir: Some("sub".into())
+            })
         );
         assert_eq!(
             by("u2").source,
-            Some(PluginSource::Git { url: "https://x/r.git".into(), commit: "def".into(), subdir: None })
+            Some(PluginSource::Git {
+                url: "https://x/r.git".into(),
+                commit: "def".into(),
+                subdir: None
+            })
         );
         assert_eq!(
             by("gs").source,
-            Some(PluginSource::Git { url: "https://x/g.git".into(), commit: "123".into(), subdir: Some("p".into()) })
+            Some(PluginSource::Git {
+                url: "https://x/g.git".into(),
+                commit: "123".into(),
+                subdir: Some("p".into())
+            })
         );
         assert_eq!(
             by("gh").source,
-            Some(PluginSource::Git { url: "https://github.com/o/n.git".into(), commit: "deadbeef".into(), subdir: None })
+            Some(PluginSource::Git {
+                url: "https://github.com/o/n.git".into(),
+                commit: "deadbeef".into(),
+                subdir: None
+            })
         );
         // Source inconnue : entrée conservée (nom/description) mais source None.
         assert_eq!(by("weird").source, None);

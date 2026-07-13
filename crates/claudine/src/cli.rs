@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use claudine_core::{
-    apply, discover_homes, dry_run, export, scan_projects, ClaudeHome, ClaudineConfig,
-    ExportOptions, ImportOptions, RemapRule, RemapTable, Report,
+    ClaudeHome, ClaudineConfig, ExportOptions, ImportOptions, RemapRule, RemapTable, Report, apply,
+    discover_homes, dry_run, export, scan_projects,
 };
 
 pub fn parse_maps(maps: &[String]) -> Result<RemapTable, String> {

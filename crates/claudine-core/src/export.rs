@@ -2,8 +2,8 @@ use std::fs::File;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use flate2::write::GzEncoder;
 use flate2::Compression;
+use flate2::write::GzEncoder;
 
 use crate::error::{CoreError, Report, Result};
 use crate::home::ClaudeHome;
@@ -130,8 +130,8 @@ pub fn export(home: &ClaudeHome, output: &Path, opts: &ExportOptions) -> Result<
         included_categories: included,
         excluded: EXCLUDED.iter().map(|s| s.to_string()).collect(),
     };
-    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
-        .map_err(|e| CoreError::JsonParse {
+    let manifest_bytes =
+        serde_json::to_vec_pretty(&manifest).map_err(|e| CoreError::JsonParse {
             file: output.to_path_buf(),
             line: 0,
             source: e,

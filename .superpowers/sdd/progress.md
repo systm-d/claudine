@@ -177,3 +177,7 @@ Points forts confirmés : durcissement git réutilisé, discipline de nettoyage 
 ## Fix wave finale 2c-2b: complete (commit 424bf0a, re-review Approved)
 C1 + I1 corrigés : version sanitisée via is_safe_name (repli "unknown") + rejet composant ParentDir sur dest ; canonicalisation src+racine (relative→mkt_dir, git→temp) avec rejet hors-racine et nettoyage temp préservé. 2 tests de régression (malicious version → unknown/ + rien hors cache ; symlink source #[cfg(unix)] → Err). Workspace 95 (core)/159, 0 clippy. Re-review opus-finding : C1✅ I1✅, 0 Critical/Important restant (1 Minor doc-coverage non exploitable).
 PHASE 2c-2b TERMINÉE, prête pour merge (branche claudine-phase2c2b, e4a96e7..424bf0a).
+
+## Chantier — Alignement claudine sur le template + josephine (2026-07-13, branche claudine-template-alignment)
+Base branche = 55c237d (après specs/plan). Plan : docs/superpowers/plans/2026-07-13-claudine-template-alignment.md
+Task 1: complete (commit 6123c1a, review clean — Approved) — edition 2024/MSRV 1.85, [workspace.dependencies]/[workspace.lints unsafe_code=forbid + clippy all=warn]/[profile.release lto+strip], rust-toolchain.toml + rustfmt.toml, crates en workspace deps + [lints]. Conflit edition-2024/forbid (set_var/remove_var → unsafe) résolu SANS déroger : extraction helpers purs config_path_from / ClaudeHome::discover_from (comme josephine, pas d'env muté en test, pas de dep). 162 tests, 0 clippy. metadata deb/rpm préservés. Pas de cargo fmt (→ T2).

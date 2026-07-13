@@ -6,14 +6,14 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use claudine_core::{
-    add_marketplace, apply as import_apply, decode_encoded_to_path, discover_homes,
-    dry_run as import_dry_run, empty_trash, export, find_in_session, install_plugin, list_trash,
-    move_session, purge_trash_item, read_extensions, read_hook_groups, read_installed_plugins,
-    read_marketplace_manifest, read_marketplaces, read_user_mcp_servers, remove_marketplace,
-    restore_trash_entry, scan_projects, set_plugin_enabled, trash_project, trash_session,
-    uninstall_plugin, update_marketplace, write_hooks, write_user_mcp_servers, ClaudeHome,
-    ClaudineConfig, Extensions, ExportOptions, ImportOptions, MarketplaceSource, Project,
-    RemapTable, SessionMeta,
+    ClaudeHome, ClaudineConfig, ExportOptions, Extensions, ImportOptions, MarketplaceSource,
+    Project, RemapTable, SessionMeta, add_marketplace, apply as import_apply,
+    decode_encoded_to_path, discover_homes, dry_run as import_dry_run, empty_trash, export,
+    find_in_session, install_plugin, list_trash, move_session, purge_trash_item, read_extensions,
+    read_hook_groups, read_installed_plugins, read_marketplace_manifest, read_marketplaces,
+    read_user_mcp_servers, remove_marketplace, restore_trash_entry, scan_projects,
+    set_plugin_enabled, trash_project, trash_session, uninstall_plugin, update_marketplace,
+    write_hooks, write_user_mcp_servers,
 };
 use serde_json::Value;
 
@@ -451,7 +451,8 @@ impl App {
     fn is_group_anchor(&self, i: usize) -> bool {
         match (
             self.project_home_bases.get(i),
-            i.checked_sub(1).and_then(|p| self.project_home_bases.get(p)),
+            i.checked_sub(1)
+                .and_then(|p| self.project_home_bases.get(p)),
         ) {
             (Some(b), Some(prev)) => b != prev,
             (Some(_), None) => true,
@@ -492,9 +493,14 @@ impl App {
             return from;
         }
         if delta >= 0 {
-            ((from + 1)..n).find(|&j| self.proj_navigable(j)).unwrap_or(from)
+            ((from + 1)..n)
+                .find(|&j| self.proj_navigable(j))
+                .unwrap_or(from)
         } else {
-            (0..from).rev().find(|&j| self.proj_navigable(j)).unwrap_or(from)
+            (0..from)
+                .rev()
+                .find(|&j| self.proj_navigable(j))
+                .unwrap_or(from)
         }
     }
 
@@ -560,7 +566,9 @@ impl App {
     }
 
     fn session_count(&self) -> usize {
-        self.selected_project().map(|p| p.sessions.len()).unwrap_or(0)
+        self.selected_project()
+            .map(|p| p.sessions.len())
+            .unwrap_or(0)
     }
 
     pub fn move_down(&mut self) {
@@ -785,17 +793,12 @@ impl App {
             }
             Section::Browse if self.browse_view == BrowseView::List => self.browse_to(true),
             Section::Memory => {
-                self.memory_scroll = self
-                    .memory_lines
-                    .len()
-                    .saturating_sub(self.memory_viewport)
+                self.memory_scroll = self.memory_lines.len().saturating_sub(self.memory_viewport)
             }
             Section::Config => {
                 if self.settings.raw() {
-                    self.config_scroll = self
-                        .config_lines
-                        .len()
-                        .saturating_sub(self.config_viewport);
+                    self.config_scroll =
+                        self.config_lines.len().saturating_sub(self.config_viewport);
                 } else {
                     self.settings.go_last();
                 }
@@ -1062,16 +1065,12 @@ impl App {
         if let Some(editor) = self.hooks_editor.as_ref() {
             for g in &editor.groups {
                 if g.event.trim().is_empty() {
-                    self.status = Some(
-                        "Enregistrement bloqué : évènement vide".to_string(),
-                    );
+                    self.status = Some("Enregistrement bloqué : évènement vide".to_string());
                     return;
                 }
                 for cmd in &g.commands {
                     if cmd.command.trim().is_empty() {
-                        self.status = Some(
-                            "Enregistrement bloqué : commande vide".to_string(),
-                        );
+                        self.status = Some("Enregistrement bloqué : commande vide".to_string());
                         return;
                     }
                 }
@@ -1161,7 +1160,12 @@ impl App {
                 .map_err(|e| e.to_string());
             let _ = tx.send(MktOutcome { result });
         });
-        self.mkt_job = Some(MktJob { label, frame: 0, rx, kind: MktJobKind::Marketplace });
+        self.mkt_job = Some(MktJob {
+            label,
+            frame: 0,
+            rx,
+            kind: MktJobKind::Marketplace,
+        });
     }
 
     /// Lance la mise à jour de la marketplace sélectionnée en arrière-plan.
@@ -1178,7 +1182,12 @@ impl App {
                 .map_err(|e| e.to_string());
             let _ = tx.send(MktOutcome { result });
         });
-        self.mkt_job = Some(MktJob { label, frame: 0, rx, kind: MktJobKind::Marketplace });
+        self.mkt_job = Some(MktJob {
+            label,
+            frame: 0,
+            rx,
+            kind: MktJobKind::Marketplace,
+        });
     }
 
     /// Retire la marketplace sélectionnée (opération locale, synchrone).
@@ -1553,7 +1562,8 @@ impl App {
                     (Some(p), Some(s)) => (p.encoded_name.clone(), s.path.clone()),
                     _ => return,
                 };
-                trash_session(&base, &encoded, &path).map(|d| format!("Session → corbeille : {}", d.display()))
+                trash_session(&base, &encoded, &path)
+                    .map(|d| format!("Session → corbeille : {}", d.display()))
             }
             DeleteKind::Project => {
                 let encoded = match self.selected_project() {
@@ -2181,7 +2191,7 @@ pub fn parse_transcript(path: &std::path::Path) -> Vec<TranscriptEntry> {
                 header: "▌ erreur".to_string(),
                 body: format!("Impossible de lire la session : {e}"),
                 unparsable: true,
-            }]
+            }];
         }
     };
 
@@ -2217,10 +2227,7 @@ fn entry_from_value(v: &Value) -> TranscriptEntry {
         .and_then(|r| r.as_str())
         .or_else(|| v.get("type").and_then(|t| t.as_str()))
         .unwrap_or("?");
-    let ts = v
-        .get("timestamp")
-        .and_then(|t| t.as_str())
-        .unwrap_or("");
+    let ts = v.get("timestamp").and_then(|t| t.as_str()).unwrap_or("");
 
     let header = if ts.is_empty() {
         format!("▌ {role}")
@@ -2350,7 +2357,10 @@ mod tests {
         assert!(app.is_empty());
         assert_eq!(app.section, Section::Browse);
         // mémoire absente → message de repli
-        assert_eq!(app.memory_lines, vec!["(aucune mémoire utilisateur)".to_string()]);
+        assert_eq!(
+            app.memory_lines,
+            vec!["(aucune mémoire utilisateur)".to_string()]
+        );
     }
 
     #[test]
@@ -2461,7 +2471,10 @@ mod tests {
 
     fn two_homes_two_projects_each() -> (tempfile::TempDir, Vec<ClaudeHome>) {
         let dir = tempfile::tempdir().unwrap();
-        for (home, encs) in [("a", ["-home-a1", "-home-a2"]), ("b", ["-home-b1", "-home-b2"])] {
+        for (home, encs) in [
+            ("a", ["-home-a1", "-home-a2"]),
+            ("b", ["-home-b1", "-home-b2"]),
+        ] {
             for enc in encs {
                 let pd = dir.path().join(home).join("projects").join(enc);
                 fs::create_dir_all(&pd).unwrap();
@@ -2716,11 +2729,12 @@ mod tests {
         app.import_apply();
         assert!(app.import.is_none());
         assert!(!app.is_empty(), "session importée visible");
-        assert!(tgt
-            .join("projects")
-            .join("-home-x-proj")
-            .join("sess.jsonl")
-            .exists());
+        assert!(
+            tgt.join("projects")
+                .join("-home-x-proj")
+                .join("sess.jsonl")
+                .exists()
+        );
     }
 
     #[test]
@@ -2732,7 +2746,10 @@ mod tests {
         app.open_import();
         app.import.as_mut().unwrap().input = "/does/not/exist.tar.gz".to_string();
         app.import_preview();
-        assert!(app.import.as_ref().unwrap().preview.is_none(), "pas d'aperçu");
+        assert!(
+            app.import.as_ref().unwrap().preview.is_none(),
+            "pas d'aperçu"
+        );
         assert!(app.status.as_deref().unwrap().contains("introuvable"));
     }
 
@@ -2782,7 +2799,10 @@ mod tests {
             app.search_input_char(c);
         }
         // Le contenu n'est trouvé qu'avec la recherche profonde (Tab).
-        assert!(app.search.as_ref().unwrap().results.is_empty(), "live = chemin/id seulement");
+        assert!(
+            app.search.as_ref().unwrap().results.is_empty(),
+            "live = chemin/id seulement"
+        );
         app.search_deep();
         assert!(app.search.as_ref().unwrap().deep);
         assert_eq!(app.search.as_ref().unwrap().results.len(), 1);
@@ -2840,7 +2860,10 @@ mod tests {
         let trashed = app.trash_view.as_ref().unwrap().items[0].dir.clone();
         // Demande de purge → confirmation requise avant suppression.
         app.trash_request_purge();
-        assert_eq!(app.trash_view.as_ref().unwrap().confirm, Some(PurgeScope::One));
+        assert_eq!(
+            app.trash_view.as_ref().unwrap().confirm,
+            Some(PurgeScope::One)
+        );
         assert!(trashed.exists(), "rien supprimé avant confirmation");
 
         app.trash_confirm_apply();
@@ -2876,11 +2899,17 @@ mod tests {
         let sessions: usize = list_trash(dir.path()).iter().map(|e| e.sessions).sum();
         assert_eq!(sessions, 2);
         app.trash_request_empty();
-        assert_eq!(app.trash_view.as_ref().unwrap().confirm, Some(PurgeScope::All));
+        assert_eq!(
+            app.trash_view.as_ref().unwrap().confirm,
+            Some(PurgeScope::All)
+        );
         app.trash_confirm_apply();
 
         assert!(app.trash_view.is_none(), "corbeille fermée après vidage");
-        assert!(list_trash(dir.path()).is_empty(), "corbeille effectivement vidée");
+        assert!(
+            list_trash(dir.path()).is_empty(),
+            "corbeille effectivement vidée"
+        );
     }
 
     #[test]
@@ -3001,7 +3030,10 @@ mod tests {
         app.hooks_save();
         assert!(app.hooks_editor.is_some(), "éditeur toujours ouvert");
         let status = app.status.as_deref().unwrap_or("");
-        assert!(status.contains("bloqué"), "statut indique le blocage : {status}");
+        assert!(
+            status.contains("bloqué"),
+            "statut indique le blocage : {status}"
+        );
 
         // Aucune écriture ne doit avoir eu lieu.
         let groups = claudine_core::read_hook_groups(app.home());
@@ -3014,7 +3046,10 @@ mod tests {
             cmd.command = "echo ok".to_string();
         }
         app.hooks_save();
-        assert!(app.hooks_editor.is_none(), "fermé après enregistrement valide");
+        assert!(
+            app.hooks_editor.is_none(),
+            "fermé après enregistrement valide"
+        );
         let groups = claudine_core::read_hook_groups(app.home());
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].commands[0].command, "echo ok");
@@ -3100,7 +3135,13 @@ mod tests {
         assert!(app.plugins_toggle.is_none());
 
         let ext = claudine_core::read_extensions(app.home());
-        assert!(!ext.plugins.iter().find(|p| p.name == "foo@m").unwrap().enabled);
+        assert!(
+            !ext.plugins
+                .iter()
+                .find(|p| p.name == "foo@m")
+                .unwrap()
+                .enabled
+        );
     }
 
     #[test]
@@ -3141,7 +3182,13 @@ mod tests {
         app.mkt_remove_confirmed();
 
         assert!(app.marketplaces.as_ref().unwrap().items.is_empty());
-        assert!(!base.join("plugins").join("marketplaces").join("gone").exists());
+        assert!(
+            !base
+                .join("plugins")
+                .join("marketplaces")
+                .join("gone")
+                .exists()
+        );
     }
 
     #[test]
@@ -3155,8 +3202,16 @@ mod tests {
 
         // Injecte un job déjà terminé.
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(MktOutcome { result: Ok("ajoutée".to_string()) }).unwrap();
-        app.mkt_job = Some(MktJob { label: "ajout".into(), frame: 0, rx, kind: MktJobKind::Marketplace });
+        tx.send(MktOutcome {
+            result: Ok("ajoutée".to_string()),
+        })
+        .unwrap();
+        app.mkt_job = Some(MktJob {
+            label: "ajout".into(),
+            frame: 0,
+            rx,
+            kind: MktJobKind::Marketplace,
+        });
         assert!(app.mkt_job_active());
 
         app.tick_mkt_job();
@@ -3178,7 +3233,10 @@ mod tests {
         assert!(app.mkt_job.is_none(), "aucun job lancé");
         assert!(app.status.as_deref().unwrap().contains("non reconnue"));
         // Retour en mode liste.
-        assert_eq!(app.marketplaces.as_ref().unwrap().mode, crate::tui::marketplaces::MktMode::List);
+        assert_eq!(
+            app.marketplaces.as_ref().unwrap().mode,
+            crate::tui::marketplaces::MktMode::List
+        );
     }
 
     /// Home avec une marketplace « m » clonée (manifeste 2 plugins) + plugin « a » installé/activé.
@@ -3205,7 +3263,11 @@ mod tests {
             cache.display()
         );
         fs::write(base.join("plugins/installed_plugins.json"), installed).unwrap();
-        fs::write(base.join("settings.json"), r#"{"enabledPlugins":{"a@m":true}}"#).unwrap();
+        fs::write(
+            base.join("settings.json"),
+            r#"{"enabledPlugins":{"a@m":true}}"#,
+        )
+        .unwrap();
         (dir, base)
     }
 
@@ -3227,10 +3289,25 @@ mod tests {
 
         // Espace sur « a » (idx 0) → désactivé.
         app.catalog_toggle_enable();
-        assert!(!app.marketplaces.as_ref().unwrap().catalog.as_ref().unwrap().entries[0].enabled);
+        assert!(
+            !app.marketplaces
+                .as_ref()
+                .unwrap()
+                .catalog
+                .as_ref()
+                .unwrap()
+                .entries[0]
+                .enabled
+        );
 
         // Désinstallation de « a ».
-        app.marketplaces.as_mut().unwrap().catalog.as_mut().unwrap().begin_uninstall();
+        app.marketplaces
+            .as_mut()
+            .unwrap()
+            .catalog
+            .as_mut()
+            .unwrap()
+            .begin_uninstall();
         app.catalog_uninstall_confirmed();
         let c = app.marketplaces.as_ref().unwrap().catalog.as_ref().unwrap();
         assert!(!c.entries[0].installed);
@@ -3249,4 +3326,3 @@ mod tests {
         assert!(app.marketplaces.as_ref().unwrap().catalog.is_none());
     }
 }
-

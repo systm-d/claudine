@@ -1,22 +1,20 @@
 //! Rendu de l'interface Claudine (ratatui).
 
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{
-        Block, Borders, Clear, List, ListItem, ListState, Paragraph, Tabs, Wrap,
-    },
-    Frame,
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Tabs, Wrap},
 };
 
 use super::app::{App, BrowseView, DeleteKind, Focus, PickerMode, PurgeScope, Section};
-use crate::tui::app::{human_size, humanize_path, MktJob};
+use crate::tui::app::{MktJob, human_size, humanize_path};
 use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
-use crate::tui::mcp_editor::{McpEdit, McpLevel, McpRow};
-use claudine_core::{scan_projects, MarketplaceSource, McpTransport};
 use crate::tui::marketplaces::MktMode;
 use crate::tui::marketplaces::PluginCatalog;
+use crate::tui::mcp_editor::{McpEdit, McpLevel, McpRow};
+use claudine_core::{MarketplaceSource, McpTransport, scan_projects};
 
 const ACCENT: Color = Color::Cyan;
 const DIM: Color = Color::DarkGray;
@@ -143,10 +141,7 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )
         .divider(Span::styled("│", Style::default().fg(DIM)));
-    let tabs_area = Rect {
-        height: 1,
-        ..inner
-    };
+    let tabs_area = Rect { height: 1, ..inner };
     f.render_widget(tabs, tabs_area);
 
     // Logo Claude aligné à droite, sur les 3 lignes intérieures (si assez large).
@@ -265,7 +260,9 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
         .highlight_style(selection_style(projects_focused))
         .highlight_symbol("▶ ");
     let mut proj_state = ListState::default();
-    proj_state.select(Some(row_of_project.get(app.project_idx).copied().unwrap_or(0)));
+    proj_state.select(Some(
+        row_of_project.get(app.project_idx).copied().unwrap_or(0),
+    ));
     f.render_stateful_widget(proj_list, cols[0], &mut proj_state);
 
     // --- Sessions ---
@@ -308,11 +305,8 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
 
     if sess_items.is_empty() {
         let block = pane_block(&title, sessions_focused);
-        let p = Paragraph::new(Span::styled(
-            "  (aucune session)",
-            Style::default().fg(DIM),
-        ))
-        .block(block);
+        let p = Paragraph::new(Span::styled("  (aucune session)", Style::default().fg(DIM)))
+            .block(block);
         f.render_widget(p, cols[1]);
     } else {
         let sess_list = List::new(sess_items)
@@ -384,12 +378,10 @@ fn render_scroll_pane(
     scroll: usize,
     viewport: &mut usize,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(Span::styled(
-            format!(" {title} "),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ));
+    let block = Block::default().borders(Borders::ALL).title(Span::styled(
+        format!(" {title} "),
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    ));
     let inner = block.inner(area);
     f.render_widget(block, area);
     *viewport = inner.height as usize;
@@ -397,7 +389,7 @@ fn render_scroll_pane(
     let text: Vec<Line> = lines
         .iter()
         .map(|l| {
-            if l.starts_with("── ") || l.starts_with("("){
+            if l.starts_with("── ") || l.starts_with("(") {
                 Line::from(Span::styled(l.clone(), Style::default().fg(ACCENT)))
             } else {
                 Line::from(l.clone())
@@ -414,7 +406,10 @@ fn render_scroll_pane(
 fn render_extensions(app: &mut App, f: &mut Frame, area: Rect) {
     let ext = &app.extensions;
     let title = if app.aggregate {
-        format!(" Extensions · {} — hooks / plugins / MCP  (t: cible) ", app.home().label)
+        format!(
+            " Extensions · {} — hooks / plugins / MCP  (t: cible) ",
+            app.home().label
+        )
     } else {
         " Extensions — hooks / plugins / MCP ".to_string()
     };
@@ -522,7 +517,10 @@ fn render_config(app: &mut App, f: &mut Frame, area: Rect) {
     if app.settings.raw() {
         let lines = app.settings.raw_lines();
         let title = if app.aggregate {
-            format!("Config · {} — settings.json (brut · r: formulaire)", app.home().label)
+            format!(
+                "Config · {} — settings.json (brut · r: formulaire)",
+                app.home().label
+            )
         } else {
             "Config — settings.json (brut · r: formulaire)".to_string()
         };
@@ -614,7 +612,10 @@ fn render_settings_form(app: &mut App, f: &mut Frame, area: Rect) {
             Span::styled(value, value_style),
         ];
         if let Some(note) = &spec.note {
-            spans.push(Span::styled(format!("  — {note}"), Style::default().fg(DIM)));
+            spans.push(Span::styled(
+                format!("  — {note}"),
+                Style::default().fg(DIM),
+            ));
         }
         lines.push(Line::from(spans));
     }
@@ -710,10 +711,7 @@ fn render_status(app: &App, f: &mut Frame, area: Rect) {
             };
             Line::from(Span::styled(format!(" {msg}"), style))
         }
-        None => Line::from(Span::styled(
-            " prêt",
-            Style::default().fg(DIM),
-        )),
+        None => Line::from(Span::styled(" prêt", Style::default().fg(DIM))),
     };
     f.render_widget(Paragraph::new(line), area);
 }
@@ -781,7 +779,11 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
                 ("Esc", "annuler"),
             ])
         } else {
-            key_hints(&[("saisir", "chemin .tar.gz"), ("Enter", "aperçu"), ("Esc", "annuler")])
+            key_hints(&[
+                ("saisir", "chemin .tar.gz"),
+                ("Enter", "aperçu"),
+                ("Esc", "annuler"),
+            ])
         };
         f.render_widget(Paragraph::new(Line::from(hints)), area);
         return;
@@ -903,23 +905,27 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
 fn render_help(f: &mut Frame, area: Rect) {
     let popup = centered_rect(64, 70, area);
     f.render_widget(Clear, popup);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(Span::styled(
-            " Aide — raccourcis ",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ));
+    let block = Block::default().borders(Borders::ALL).title(Span::styled(
+        " Aide — raccourcis ",
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    ));
     let rows = [
         ("1 / 2 / 3 / 4", "Projets / Mémoire / Config / Extensions"),
         ("Tab", "section suivante"),
-        ("Extensions", "hooks (Enter) · plugins (p) · MCP (m) · marketplaces (g → Enter: catalogue, i installe) ; E édite settings.json"),
+        (
+            "Extensions",
+            "hooks (Enter) · plugins (p) · MCP (m) · marketplaces (g → Enter: catalogue, i installe) ; E édite settings.json",
+        ),
         ("← →", "changer de panneau (Browse)"),
         ("↑ ↓ / j k", "naviguer / défiler"),
         ("Enter", "ouvrir la session sélectionnée"),
         ("Espace", "replier / déplier le home courant (agrégé)"),
         ("z", "tout replier / tout déplier (agrégé)"),
         ("/", "rechercher (live chemin/id · Tab = contenu)"),
-        ("d / Suppr", "→ corbeille : session (panneau Sessions) ou projet (panneau Projets)"),
+        (
+            "d / Suppr",
+            "→ corbeille : session (panneau Sessions) ou projet (panneau Projets)",
+        ),
         ("m", "déplacer la session vers un autre projet"),
         ("c", "corbeille : restaurer / supprimer déf. / vider"),
         ("Esc", "retour (transcript) sinon quitter"),
@@ -927,8 +933,14 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("Home / End", "aller au début / à la fin"),
         ("e", "exporter ~/.claude en .tar.gz"),
         ("i", "importer un bundle .tar.gz (aperçu puis application)"),
-        ("E", "éditer le fichier de la section dans $EDITOR (Mémoire/Config)"),
-        ("Config", "↑↓ champ · Enter éditer · ←→ option · s enregistrer · r JSON"),
+        (
+            "E",
+            "éditer le fichier de la section dans $EDITOR (Mémoire/Config)",
+        ),
+        (
+            "Config",
+            "↑↓ champ · Enter éditer · ←→ option · s enregistrer · r JSON",
+        ),
         ("h", "homes : ★ Tous les homes (agrégé) / un home précis"),
         ("t", "en agrégé : changer le home cible de Mémoire/Config"),
         ("?", "afficher/masquer cette aide"),
@@ -997,7 +1009,10 @@ fn render_picker(app: &App, f: &mut Frame, area: Rect) {
                 mark,
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ),
-            Span::styled("★ Tous les homes", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "★ Tous les homes",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 format!("  ({} homes)", app.homes.len()),
                 Style::default().fg(DIM),
@@ -1116,7 +1131,9 @@ fn render_confirm_delete(app: &App, f: &mut Frame, area: Rect) {
         Line::from(vec![
             Span::styled(
                 "  [o]",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" oui    "),
             Span::styled(
@@ -1318,7 +1335,10 @@ fn render_trash(app: &App, f: &mut Frame, area: Rect) {
         };
         let warn = Paragraph::new(Line::from(Span::styled(
             msg,
-            Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
         )));
         f.render_widget(warn, area);
     }
@@ -1424,7 +1444,9 @@ fn render_hooks_editor(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(Clear, popup);
     let hint = match e.level {
         HooksLevel::Groups => " a ajouter · Enter ouvrir · d suppr. · s enregistrer · Esc fermer ",
-        HooksLevel::Group => " a commande · Enter éditer · t timeout · d suppr. · s enregistrer · Esc retour ",
+        HooksLevel::Group => {
+            " a commande · Enter éditer · t timeout · d suppr. · s enregistrer · Esc retour "
+        }
     };
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1480,10 +1502,7 @@ fn render_hooks_editor(app: &App, f: &mut Frame, area: Rect) {
                 };
                 Line::from(Span::styled(label, style))
             };
-            lines.push(row(
-                e.field_idx == 0,
-                format!("  Évènement : {}", g.event),
-            ));
+            lines.push(row(e.field_idx == 0, format!("  Évènement : {}", g.event)));
             lines.push(row(
                 e.field_idx == 1,
                 format!(
@@ -1524,7 +1543,10 @@ fn render_hooks_editor(app: &App, f: &mut Frame, area: Rect) {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "  Supprimer l'élément sélectionné ? (o/n)",
-            Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
         )));
     }
 
@@ -1581,7 +1603,9 @@ fn render_mcp_editor(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(Clear, popup);
     let hint = match e.level {
         McpLevel::Servers => " a ajouter · Enter ouvrir · d suppr. · s enregistrer · Esc fermer ",
-        McpLevel::Server => " ←/→ type · Enter éditer · a ajouter · d suppr. · s enregistrer · Esc retour ",
+        McpLevel::Server => {
+            " ←/→ type · Enter éditer · a ajouter · d suppr. · s enregistrer · Esc retour "
+        }
     };
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1637,7 +1661,10 @@ fn render_mcp_editor(app: &App, f: &mut Frame, area: Rect) {
                     }
                     McpRow::Command => format!("  Command  : {}", s.command),
                     McpRow::Url => format!("  URL      : {}", s.url),
-                    McpRow::Arg(i) => format!("    arg[{i}] : {}", s.args.get(i).cloned().unwrap_or_default()),
+                    McpRow::Arg(i) => format!(
+                        "    arg[{i}] : {}",
+                        s.args.get(i).cloned().unwrap_or_default()
+                    ),
                     McpRow::Env(i) => {
                         let (k, v) = s.env.get(i).cloned().unwrap_or_default();
                         format!("    env     : {k}={v}")
@@ -1671,7 +1698,10 @@ fn render_mcp_editor(app: &App, f: &mut Frame, area: Rect) {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "  Supprimer l'élément sélectionné ? (o/n)",
-            Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
         )));
     }
 
@@ -1723,8 +1753,18 @@ fn render_marketplaces(app: &App, f: &mut Frame, area: Rect) {
             MarketplaceSource::Local { path } => format!("local:{}", path.display()),
         };
         let date = mk.last_updated.split('T').next().unwrap_or("");
-        let label = format!("{} {}  ·  {}  ·  {}", if sel { "▶" } else { " " }, mk.name, src, date);
-        let style = if sel { selection_style(true) } else { Style::default() };
+        let label = format!(
+            "{} {}  ·  {}  ·  {}",
+            if sel { "▶" } else { " " },
+            mk.name,
+            src,
+            date
+        );
+        let style = if sel {
+            selection_style(true)
+        } else {
+            Style::default()
+        };
         lines.push(Line::from(Span::styled(label, style)));
     }
 
@@ -1735,7 +1775,10 @@ fn render_marketplaces(app: &App, f: &mut Frame, area: Rect) {
             Style::default().fg(ACCENT),
         )));
         lines.push(Line::from(vec![
-            Span::styled("  > ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  > ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
             Span::raw(m.input.clone()),
             Span::styled("▏", Style::default().fg(ACCENT)),
         ]));
@@ -1805,7 +1848,11 @@ fn render_plugin_catalog(c: &PluginCatalog, job: Option<&MktJob>, f: &mut Frame,
             "(non installé)"
         };
         let label = format!("{} {}  {}", if sel { "▶" } else { " " }, e.name, state);
-        let style = if sel { selection_style(true) } else { Style::default() };
+        let style = if sel {
+            selection_style(true)
+        } else {
+            Style::default()
+        };
         lines.push(Line::from(Span::styled(label, style)));
         if sel {
             if let Some(d) = &e.description {
@@ -1945,7 +1992,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 mod tests {
     use super::*;
     use claudine_core::ClaudeHome;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     use std::fs;
 
     fn render_section(home: ClaudeHome, section: Section) {
@@ -1973,7 +2020,12 @@ mod tests {
         assert_eq!(logo.len(), 3);
         let text: Vec<String> = logo
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect();
         // Glyphe officiel de la boîte « What's new » de Claude Code.
         assert_eq!(text, vec![" ▐▛███▜▌", "▝▜█████▛▘", "  ▘▘ ▝▝"]);
@@ -2019,12 +2071,14 @@ mod tests {
         let backend = TestBackend::new(90, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| render(&mut app, f)).unwrap();
-        assert!(terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .any(|c| c.symbol() != " "));
+        assert!(
+            terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .any(|c| c.symbol() != " ")
+        );
     }
 
     /// Construit deux fausses homes via `discover_homes_in` sur un tempdir, puis
@@ -2054,23 +2108,27 @@ mod tests {
 
         // Cadre principal (titre = home active).
         terminal.draw(|f| render(&mut app, f)).unwrap();
-        assert!(terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .any(|c| c.symbol() != " "));
+        assert!(
+            terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .any(|c| c.symbol() != " ")
+        );
 
         // Popup du sélecteur (mode liste).
         app.open_picker();
         terminal.draw(|f| render(&mut app, f)).unwrap();
         assert!(app.show_picker);
-        assert!(terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .any(|c| c.symbol() != " "));
+        assert!(
+            terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .any(|c| c.symbol() != " ")
+        );
 
         // Popup en mode saisie de chemin (ajout de home).
         app.picker_start_add();
@@ -2080,4 +2138,3 @@ mod tests {
         assert!(matches!(app.picker_mode, PickerMode::AddInput(_)));
     }
 }
-

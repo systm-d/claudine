@@ -159,8 +159,12 @@ pub fn discover_homes_in(home_dir: &Path, config_dir: Option<&Path>) -> Vec<Clau
 
     // Tri : défaut d'abord, puis par étiquette croissante.
     homes.sort_by(|a, b| {
-        let a_default = default_key.as_ref().is_some_and(|k| dedup_key(&a.base) == *k);
-        let b_default = default_key.as_ref().is_some_and(|k| dedup_key(&b.base) == *k);
+        let a_default = default_key
+            .as_ref()
+            .is_some_and(|k| dedup_key(&a.base) == *k);
+        let b_default = default_key
+            .as_ref()
+            .is_some_and(|k| dedup_key(&b.base) == *k);
         match (a_default, b_default) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
@@ -215,15 +219,27 @@ mod tests {
     #[test]
     fn from_base_builds_subpaths() {
         let h = ClaudeHome::from_base("/x/.claude");
-        assert_eq!(h.projects_dir(), std::path::Path::new("/x/.claude/projects"));
-        assert_eq!(h.settings_file(), std::path::Path::new("/x/.claude/settings.json"));
-        assert_eq!(h.history_file(), std::path::Path::new("/x/.claude/history.jsonl"));
+        assert_eq!(
+            h.projects_dir(),
+            std::path::Path::new("/x/.claude/projects")
+        );
+        assert_eq!(
+            h.settings_file(),
+            std::path::Path::new("/x/.claude/settings.json")
+        );
+        assert_eq!(
+            h.history_file(),
+            std::path::Path::new("/x/.claude/history.jsonl")
+        );
     }
 
     #[test]
     fn from_base_derives_label() {
         assert_eq!(ClaudeHome::from_base("/x/.claude").label, ".claude");
-        assert_eq!(ClaudeHome::from_base("/x/.claude-perso").label, ".claude-perso");
+        assert_eq!(
+            ClaudeHome::from_base("/x/.claude-perso").label,
+            ".claude-perso"
+        );
         // Repli sur "claude" si pas de composant final exploitable.
         assert_eq!(ClaudeHome::from_base("/").label, "claude");
     }

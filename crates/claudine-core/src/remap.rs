@@ -36,12 +36,11 @@ impl RemapTable {
 /// Réécrit récursivement toute valeur chaîne qui correspond à une règle.
 /// Renvoie la ligne re-sérialisée et le nombre de remplacements.
 pub fn rewrite_jsonl_line(line: &str, table: &RemapTable) -> Result<(String, usize)> {
-    let mut value: Value =
-        serde_json::from_str(line).map_err(|e| CoreError::JsonParse {
-            file: PathBuf::from("<ligne jsonl>"),
-            line: 0,
-            source: e,
-        })?;
+    let mut value: Value = serde_json::from_str(line).map_err(|e| CoreError::JsonParse {
+        file: PathBuf::from("<ligne jsonl>"),
+        line: 0,
+        source: e,
+    })?;
     let mut count = 0usize;
     rewrite_value(&mut value, table, &mut count);
     let out = serde_json::to_string(&value).map_err(|e| CoreError::JsonParse {
@@ -88,15 +87,24 @@ mod tests {
     #[test]
     fn apply_to_path_replaces_prefix() {
         let t = table();
-        assert_eq!(t.apply_to_path("/home/old/proj").as_deref(), Some("/home/new/proj"));
+        assert_eq!(
+            t.apply_to_path("/home/old/proj").as_deref(),
+            Some("/home/new/proj")
+        );
         assert_eq!(t.apply_to_path("/other/x"), None);
     }
 
     #[test]
     fn apply_to_path_prefers_longest_match() {
         let t = RemapTable::new(vec![
-            RemapRule { from: "/home".into(), to: "/A".into() },
-            RemapRule { from: "/home/old".into(), to: "/B".into() },
+            RemapRule {
+                from: "/home".into(),
+                to: "/A".into(),
+            },
+            RemapRule {
+                from: "/home/old".into(),
+                to: "/B".into(),
+            },
         ]);
         assert_eq!(t.apply_to_path("/home/old/x").as_deref(), Some("/B/x"));
     }
