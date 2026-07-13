@@ -28,21 +28,27 @@ impl ClaudeHome {
     }
 
     pub fn discover() -> Result<Self> {
-        if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
+        Self::discover_from(
+            std::env::var("CLAUDE_CONFIG_DIR").ok().as_deref(),
+            std::env::var("HOME").ok().as_deref(),
+        )
+    }
+
+    /// Résolution pure de la home à partir des valeurs d'environnement
+    /// (testable sans muter l'environnement global du process).
+    fn discover_from(claude_config_dir: Option<&str>, home: Option<&str>) -> Result<Self> {
+        if let Some(dir) = claude_config_dir {
             if !dir.is_empty() {
                 return Ok(Self::from_base(dir));
             }
         }
-        let home = std::env::var("HOME").map_err(|_| {
+        let home = home.ok_or_else(|| {
             CoreError::io(
                 "<HOME>",
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "variable HOME absente",
-                ),
+                std::io::Error::new(std::io::ErrorKind::NotFound, "variable HOME absente"),
             )
         })?;
-        Ok(Self::from_base(Path::new(&home).join(".claude")))
+        Ok(Self::from_base(Path::new(home).join(".claude")))
     }
 
     pub fn projects_dir(&self) -> PathBuf {
@@ -224,12 +230,9 @@ mod tests {
 
     #[test]
     fn discover_respects_env() {
-        // CLAUDE_CONFIG_DIR est global au process : on capture le résultat et on
-        // retire la variable AVANT l'assertion, pour ne pas la laisser fuiter si
-        // l'assertion panique (teardown-on-panic).
-        std::env::set_var("CLAUDE_CONFIG_DIR", "/custom/dir");
-        let base = ClaudeHome::discover().unwrap().base;
-        std::env::remove_var("CLAUDE_CONFIG_DIR");
+        let base = ClaudeHome::discover_from(Some("/custom/dir"), Some("/home/x"))
+            .unwrap()
+            .base;
         assert_eq!(base, std::path::Path::new("/custom/dir"));
     }
 

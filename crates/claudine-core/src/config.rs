@@ -28,14 +28,19 @@ pub struct ClaudineConfig {
 /// `$XDG_CONFIG_HOME/claudine/config.json` si `XDG_CONFIG_HOME` est défini et
 /// non vide, sinon `$HOME/.config/claudine/config.json`.
 pub fn config_path() -> PathBuf {
-    let base = std::env::var("XDG_CONFIG_HOME")
-        .ok()
+    config_path_from(
+        std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
+        std::env::var("HOME").ok().as_deref(),
+    )
+}
+
+/// Résolution pure du chemin de config à partir des valeurs d'environnement
+/// (testable sans muter l'environnement global du process).
+fn config_path_from(xdg_config_home: Option<&str>, home: Option<&str>) -> PathBuf {
+    let base = xdg_config_home
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            Path::new(&home).join(".config")
-        });
+        .unwrap_or_else(|| Path::new(home.unwrap_or_default()).join(".config"));
     base.join("claudine").join("config.json")
 }
 
@@ -241,15 +246,7 @@ mod tests {
 
     #[test]
     fn config_path_prefers_xdg() {
-        // On teste la logique de préférence sans toucher l'environnement réel
-        // de façon durable : capture puis restauration.
-        let prev_xdg = std::env::var("XDG_CONFIG_HOME").ok();
-        std::env::set_var("XDG_CONFIG_HOME", "/tmp/xdg-claudine");
-        let p = config_path();
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
-        }
+        let p = config_path_from(Some("/tmp/xdg-claudine"), Some("/home/x"));
         assert_eq!(p, PathBuf::from("/tmp/xdg-claudine/claudine/config.json"));
     }
 }
