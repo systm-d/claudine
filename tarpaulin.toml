@@ -1,0 +1,15 @@
+# cargo-tarpaulin coverage config.
+# Target: 80% on the testable pure-logic core (documented goal, not yet enforced —
+# enforce via `fail_under` once the IO modules gain tests; see ROADMAP).
+[default]
+workspace = true
+out = ["Xml", "Stdout"]
+# IO-bound modules excluded: they read the filesystem (~/.claude), spawn
+# subprocesses, or draw terminal UI and cannot be unit-tested deterministically in CI.
+exclude-files = [
+    "crates/claudine-core/src/tui/*",
+    "crates/claudine-core/src/cli.rs",
+    "crates/claudine-core/src/commands/*",
+    "crates/claudine/src/main.rs",
+    "*/tests/*",
+]
