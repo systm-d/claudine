@@ -1,0 +1,37 @@
+# Maintainer: systm-d <k@levilainpetit.dev>
+pkgname=claudine
+pkgver=0.0.2
+pkgrel=1
+pkgdesc="Outil Rust TUI/CLI pour naviguer et gérer les données locales de Claude Code (~/.claude)"
+arch=('x86_64')
+url="https://github.com/systm-d/claudine"
+license=('MIT' 'Apache-2.0')
+depends=('gcc-libs')
+makedepends=('cargo')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/systm-d/claudine/archive/refs/tags/v$pkgver.tar.gz")
+# Fill with the real checksum before publishing: run `updpkgsums` (or paste the
+# release tarball's sha256). Do NOT use 'SKIP' — it bypasses integrity checks.
+sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  cargo fetch --locked --target "x86_64-unknown-linux-gnu"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  cargo test --frozen --release
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 "target/release/claudine" "$pkgdir/usr/bin/claudine"
+  install -Dm644 "LICENSE-MIT" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+  install -Dm644 "LICENSE-APACHE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}
