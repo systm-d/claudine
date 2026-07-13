@@ -220,6 +220,8 @@ pub struct App {
     pub status: Option<String>,
     /// Fichier à éditer dans `$EDITOR` (traité par la boucle d'évènements).
     pub pending_edit: Option<PathBuf>,
+    /// Texte à copier dans le presse-papiers (traité par la boucle d'évènements).
+    pub pending_clipboard: Option<String>,
 
     // --- Sélecteur de home ---
     pub show_picker: bool,
@@ -342,6 +344,7 @@ impl App {
             show_help: false,
             status: None,
             pending_edit: None,
+            pending_clipboard: None,
             show_picker: false,
             picker_idx: 0,
             picker_mode: PickerMode::List,
@@ -409,6 +412,24 @@ impl App {
 
     pub fn is_empty(&self) -> bool {
         self.projects.is_empty()
+    }
+
+    /// Copie l'identifiant complet de la session sélectionnée dans le
+    /// presse-papiers (traité par la boucle via OSC 52). Utile pour reprendre
+    /// une session ailleurs (`claude --resume <id>`, partage, etc.).
+    pub fn copy_selected_session_id(&mut self) {
+        if self.section != Section::Browse {
+            return;
+        }
+        match self.selected_session().map(|s| s.id.clone()) {
+            Some(id) => {
+                self.status = Some(format!("Identifiant copié : {id}"));
+                self.pending_clipboard = Some(id);
+            }
+            None => {
+                self.status = Some("Aucune session sélectionnée à copier".to_string());
+            }
+        }
     }
 
     // --- Navigation globale ---
@@ -1763,13 +1784,21 @@ impl App {
         self.status = Some(format!("{n} session(s) (contenu) pour « {query} »"));
     }
 
-    /// Ouvre le transcript de la session du résultat sélectionné.
+    /// Ouvre le transcript de la session du résultat sélectionné. Si aucun
+    /// résultat n'est sélectionné mais que la requête n'est pas vide et qu'on
+    /// n'a pas encore cherché dans le contenu, `Entrée` bascule sur la recherche
+    /// de contenu (au lieu de fermer bêtement la fenêtre).
     pub fn search_open_selected(&mut self) {
         let (pi, si) = match &self.search {
             Some(s) => match s.results.get(s.idx) {
                 Some(h) => (h.project_idx, h.session_idx),
                 None => {
-                    self.search = None;
+                    let has_query = !s.query.trim().is_empty();
+                    if has_query && !s.deep {
+                        self.search_deep();
+                    } else if !has_query {
+                        self.search = None;
+                    }
                     return;
                 }
             },
@@ -2812,6 +2841,59 @@ mod tests {
         assert_eq!(app.section, Section::Browse);
         assert_eq!(app.browse_view, BrowseView::Transcript);
         assert!(!app.transcript.is_empty());
+    }
+
+    #[test]
+    fn search_enter_escalates_to_content_when_no_path_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdir = dir.path().join("projects").join("-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(
+            pdir.join("aaaa.jsonl"),
+            r#"{"type":"user","cwd":"/home/x","message":{"content":"refactor the WIDGET layout"}}"#,
+        )
+        .unwrap();
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+
+        app.open_search();
+        for c in "widget".chars() {
+            app.search_input_char(c);
+        }
+        // Le filtre live (chemin/id) ne trouve rien pour un mot du contenu.
+        assert!(app.search.as_ref().unwrap().results.is_empty());
+
+        // Entrée doit basculer sur la recherche de contenu, pas fermer la fenêtre.
+        app.search_open_selected();
+        let s = app.search.as_ref().expect("la recherche reste ouverte");
+        assert!(s.deep, "Entrée a escaladé vers la recherche de contenu");
+        assert_eq!(s.results.len(), 1);
+
+        // Un second Entrée ouvre alors le résultat trouvé.
+        app.search_open_selected();
+        assert!(app.search.is_none());
+        assert_eq!(app.browse_view, BrowseView::Transcript);
+    }
+
+    #[test]
+    fn copy_selected_session_id_queues_full_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdir = dir.path().join("projects").join("-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        let full_id = "abcdef01-2345-6789-abcd-ef0123456789";
+        fs::write(
+            pdir.join(format!("{full_id}.jsonl")),
+            r#"{"type":"user","cwd":"/home/x","message":{"content":"hi"}}"#,
+        )
+        .unwrap();
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+        app.section = Section::Browse;
+        app.focus = Focus::Sessions;
+
+        app.copy_selected_session_id();
+        assert_eq!(app.pending_clipboard.as_deref(), Some(full_id));
+        assert!(app.status.as_deref().unwrap().contains(full_id));
     }
 
     #[test]
