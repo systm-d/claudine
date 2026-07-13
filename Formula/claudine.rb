@@ -9,8 +9,8 @@
 class Claudine < Formula
   desc "Outil Rust TUI/CLI pour naviguer et gérer les données locales de Claude Code"
   homepage "https://github.com/systm-d/claudine"
-  url "https://github.com/systm-d/claudine/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  url "https://github.com/systm-d/claudine/archive/refs/tags/v0.0.1.tar.gz"
+  sha256 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   license any_of: ["MIT", "Apache-2.0"]
   head "https://github.com/systm-d/claudine.git", branch: "main"
 
