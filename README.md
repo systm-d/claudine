@@ -13,7 +13,10 @@ et extensions (hooks, plugins, serveurs MCP).
 
 [![Licence](https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-blue)](#licence)
 [![CI](https://github.com/systm-d/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/ci.yml)
+[![Pages](https://github.com/systm-d/claudine/actions/workflows/pages.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/pages.yml)
 [![Release](https://github.com/systm-d/claudine/actions/workflows/release.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/release.yml)
+
+**Site :** <https://systm-d.github.io/claudine>
 
 ---
 
@@ -54,7 +57,15 @@ et extensions (hooks, plugins, serveurs MCP).
 
 ## Installation
 
-Rust ≥ 1.74 requis.
+### Cargo (crates.io)
+
+```sh
+cargo install claudine
+```
+
+### Depuis les sources
+
+Rust ≥ 1.85 requis.
 
 ```sh
 git clone https://github.com/systm-d/claudine
@@ -74,7 +85,7 @@ qui publie des artefacts pour les plateformes les plus répandues :
 | Linux générique       | `claudine-linux-x86_64.tar.gz`                    |
 | Debian / Ubuntu       | `claudine_<version>_amd64.deb`                    |
 | Fedora / RHEL         | `claudine-<version>.x86_64.rpm`                   |
-| Arch Linux            | `claudine-<version>-1-x86_64.pkg.tar.zst`         |
+| Arch Linux            | AUR (source) — `yay -S claudine`                  |
 
 > Les Mac Intel sont couverts par Homebrew, qui compile depuis les sources
 > (pas de binaire Intel pré-compilé).
@@ -84,11 +95,27 @@ qui publie des artefacts pour les plateformes les plus répandues :
 sudo dpkg -i claudine_*.deb
 # Fedora / RHEL
 sudo rpm -i claudine-*.rpm
-# Arch Linux
-sudo pacman -U claudine-*.pkg.tar.zst
 ```
 
+> Arch Linux : voir la section AUR ci-dessous (installation depuis les
+> sources via le `PKGBUILD`, pas de paquet pré-compilé).
+
 #### Gestionnaires de paquets
+
+**Arch Linux — AUR :**
+
+```sh
+yay -S claudine   # ou : paru -S claudine
+```
+
+Chaque release publie aussi un `PKGBUILD` prêt à l'emploi
+([`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD)) pour une installation
+manuelle depuis les sources :
+
+```sh
+curl -LO https://github.com/systm-d/claudine/releases/latest/download/PKGBUILD
+makepkg -si
+```
 
 **macOS — Homebrew :**
 
@@ -183,10 +210,14 @@ cargo build --workspace
 cargo test --workspace
 
 # Linter
-cargo clippy --workspace -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
+
+# Formatage (rustfmt.toml : edition 2024, max_width 100)
+cargo fmt
 ```
 
-> **Note :** ce projet est formaté à la main. N'exécutez **pas** `cargo fmt`.
+> **Note :** ce projet utilise `cargo fmt` ; la CI vérifie `cargo fmt --check`.
+> Exécutez `cargo fmt` avant chaque commit.
 
 ---
 

@@ -9,7 +9,7 @@ use crate::error::{CoreError, Report, Result};
 use crate::home::ClaudeHome;
 use crate::manifest::{Manifest, SCHEMA_VERSION};
 use crate::pathcodec::encode_cwd;
-use crate::remap::{rewrite_jsonl_line, RemapTable};
+use crate::remap::{RemapTable, rewrite_jsonl_line};
 
 #[derive(Debug, Clone, Default)]
 pub struct ImportOptions {
@@ -23,9 +23,7 @@ fn open_archive(bundle: &Path) -> Result<tar::Archive<GzDecoder<File>>> {
 
 pub fn read_manifest(bundle: &Path) -> Result<Manifest> {
     let mut archive = open_archive(bundle)?;
-    let entries = archive
-        .entries()
-        .map_err(|e| CoreError::io(bundle, e))?;
+    let entries = archive.entries().map_err(|e| CoreError::io(bundle, e))?;
     for entry in entries {
         let mut entry = entry.map_err(|e| CoreError::io(bundle, e))?;
         let path = entry.path().map_err(|e| CoreError::io(bundle, e))?;
@@ -34,13 +32,12 @@ pub fn read_manifest(bundle: &Path) -> Result<Manifest> {
             entry
                 .read_to_string(&mut buf)
                 .map_err(|e| CoreError::io(bundle, e))?;
-            let manifest: Manifest = serde_json::from_str(&buf).map_err(|e| {
-                CoreError::JsonParse {
+            let manifest: Manifest =
+                serde_json::from_str(&buf).map_err(|e| CoreError::JsonParse {
                     file: bundle.to_path_buf(),
                     line: 0,
                     source: e,
-                }
-            })?;
+                })?;
             if manifest.schema_version != SCHEMA_VERSION {
                 return Err(CoreError::ManifestVersion(manifest.schema_version));
             }
@@ -75,8 +72,8 @@ pub fn dry_run(
     let mut report = Report::default();
     for p in &manifest.projects {
         report.bump("projects", 1);
-        let new_dir = target_dir_name(p.cwd.as_deref(), table)
-            .unwrap_or_else(|| p.encoded_name.clone());
+        let new_dir =
+            target_dir_name(p.cwd.as_deref(), table).unwrap_or_else(|| p.encoded_name.clone());
         for sid in &p.session_ids {
             let dest = target
                 .projects_dir()
@@ -129,7 +126,12 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 
 /// Réécrit le contenu d'une session ligne par ligne ; préserve les lignes
 /// non parsables (verbatim) et compte les réécritures.
-fn rewrite_session(content: &str, table: &RemapTable, report: &mut Report, context: &str) -> String {
+fn rewrite_session(
+    content: &str,
+    table: &RemapTable,
+    report: &mut Report,
+    context: &str,
+) -> String {
     let mut out_lines = Vec::new();
     for line in content.lines() {
         if line.trim().is_empty() {
@@ -146,7 +148,9 @@ fn rewrite_session(content: &str, table: &RemapTable, report: &mut Report, conte
                 out_lines.push(rewritten);
             }
             Err(_) => {
-                report.warn(format!("ligne non parsable préservée verbatim dans {context}"));
+                report.warn(format!(
+                    "ligne non parsable préservée verbatim dans {context}"
+                ));
                 report.bump("lines_preserved", 1);
                 out_lines.push(line.to_string());
             }
@@ -186,7 +190,10 @@ pub fn apply(
     let entries = archive.entries().map_err(|e| CoreError::io(bundle, e))?;
     for entry in entries {
         let mut entry = entry.map_err(|e| CoreError::io(bundle, e))?;
-        let path = entry.path().map_err(|e| CoreError::io(bundle, e))?.into_owned();
+        let path = entry
+            .path()
+            .map_err(|e| CoreError::io(bundle, e))?
+            .into_owned();
         // Ignore les entrées non régulières (symlinks/hardlinks/dirs).
         if !entry.header().entry_type().is_file() {
             continue;
@@ -238,7 +245,7 @@ pub fn apply(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::export::{export, ExportOptions};
+    use crate::export::{ExportOptions, export};
     use crate::home::ClaudeHome;
     use crate::remap::{RemapRule, RemapTable};
     use crate::testkit::FakeHome;
@@ -300,16 +307,12 @@ mod tests {
         let report = apply(&bundle, &home, &table(), &ImportOptions::default()).unwrap();
 
         // La session est arrivée dans le dossier ré-encodé du nouveau cwd.
-        let dest = home
-            .projects_dir()
-            .join("-home-new-proj")
-            .join("abc.jsonl");
+        let dest = home.projects_dir().join("-home-new-proj").join("abc.jsonl");
         assert!(dest.exists(), "session manquante: {dest:?}");
 
         // Le champ cwd interne a été remappé.
         let content = std::fs::read_to_string(&dest).unwrap();
-        let v: serde_json::Value =
-            serde_json::from_str(content.lines().next().unwrap()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(content.lines().next().unwrap()).unwrap();
         assert_eq!(v["cwd"], "/home/new/proj");
 
         assert_eq!(report.count("sessions_imported"), 1);
@@ -370,6 +373,9 @@ mod tests {
         let with_nl = rewrite_session("{\"a\":1}\n", &table, &mut report, "t");
         assert!(with_nl.ends_with('\n'), "doit conserver le newline final");
         let without_nl = rewrite_session("{\"a\":1}", &table, &mut report, "t");
-        assert!(!without_nl.ends_with('\n'), "ne doit pas en ajouter si absent");
+        assert!(
+            !without_nl.ends_with('\n'),
+            "ne doit pas en ajouter si absent"
+        );
     }
 }

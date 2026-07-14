@@ -1,7 +1,7 @@
 //! Éditeur de serveurs MCP dédié (modal) : navigation serveurs → serveur,
 //! édition des champs selon le transport.
 
-use claudine_core::{McpServer, McpTransport};
+use crate::{McpServer, McpTransport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpLevel {
@@ -185,7 +185,9 @@ impl McpEditor {
             return;
         };
         match (s.transport, row) {
-            (McpTransport::Stdio, Some(McpRow::Env(_))) => s.env.push((String::new(), String::new())),
+            (McpTransport::Stdio, Some(McpRow::Env(_))) => {
+                s.env.push((String::new(), String::new()))
+            }
             (McpTransport::Stdio, _) => s.args.push(String::new()),
             (_, _) => s.headers.push((String::new(), String::new())),
         }
@@ -334,7 +336,7 @@ fn split_pair(buf: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claudine_core::{McpServer, McpTransport};
+    use crate::{McpServer, McpTransport};
 
     fn sample() -> Vec<McpServer> {
         vec![McpServer {
@@ -423,7 +425,10 @@ mod tests {
             e.input_char(c);
         }
         e.input_commit();
-        assert_eq!(e.servers[0].env, vec![("TOKEN".to_string(), "abc".to_string())]);
+        assert_eq!(
+            e.servers[0].env,
+            vec![("TOKEN".to_string(), "abc".to_string())]
+        );
     }
 
     #[test]

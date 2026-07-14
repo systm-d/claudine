@@ -13,13 +13,16 @@ use std::path::Path;
 use std::process::Command;
 
 use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+        KeyModifiers,
+    },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 
-use claudine_core::discover_homes;
+use crate::discover_homes;
 
 use app::{App, PickerMode, Section};
 
@@ -110,7 +113,11 @@ fn event_loop(terminal: &mut Tui, mut app: App) -> io::Result<()> {
 /// restaure le terminal.
 fn edit_in_external_editor(terminal: &mut Tui, path: &Path) -> io::Result<()> {
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
 
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -125,7 +132,11 @@ fn edit_in_external_editor(terminal: &mut Tui, path: &Path) -> io::Result<()> {
     }
 
     enable_raw_mode()?;
-    execute!(terminal.backend_mut(), EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        EnterAlternateScreen,
+        EnableMouseCapture
+    )?;
     terminal.clear()?;
     Ok(())
 }
@@ -147,7 +158,10 @@ fn handle_key(app: &mut App, key: KeyEvent) {
     // Confirmation de suppression.
     if app.confirm_delete.is_some() {
         match key.code {
-            KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+            KeyCode::Char('o')
+            | KeyCode::Char('O')
+            | KeyCode::Char('y')
+            | KeyCode::Char('Y')
             | KeyCode::Enter => app.confirm_delete_apply(),
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => app.confirm_delete_cancel(),
             _ => {}
@@ -176,9 +190,14 @@ fn handle_key(app: &mut App, key: KeyEvent) {
             .unwrap_or(false);
         if awaiting_purge {
             match key.code {
-                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                KeyCode::Char('o')
+                | KeyCode::Char('O')
+                | KeyCode::Char('y')
+                | KeyCode::Char('Y')
                 | KeyCode::Enter => app.trash_confirm_apply(),
-                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => app.trash_confirm_cancel(),
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    app.trash_confirm_cancel()
+                }
                 _ => {}
             }
         } else {
@@ -236,7 +255,10 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         if in_preview {
             match key.code {
                 KeyCode::Esc => app.import_cancel(),
-                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                KeyCode::Char('o')
+                | KeyCode::Char('O')
+                | KeyCode::Char('y')
+                | KeyCode::Char('Y')
                 | KeyCode::Enter => app.import_apply(),
                 KeyCode::Char('w') | KeyCode::Char('W') => app.import_toggle_overwrite(),
                 _ => {}
@@ -409,7 +431,10 @@ fn handle_hooks_editor_key(app: &mut App, key: KeyEvent) {
     // `s` (enregistrer) et `Esc` (annuler) codent une action différée sur `app`
     // (nécessite de relâcher le borrow de `hooks_editor` avant d'appeler
     // `hooks_save`/`hooks_cancel`).
-    enum Deferred { Save, Cancel }
+    enum Deferred {
+        Save,
+        Cancel,
+    }
     let deferred: Option<Deferred>;
 
     {
@@ -419,7 +444,10 @@ fn handle_hooks_editor_key(app: &mut App, key: KeyEvent) {
         // Confirmation de suppression prioritaire.
         if e.confirm_delete {
             match key.code {
-                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                KeyCode::Char('o')
+                | KeyCode::Char('O')
+                | KeyCode::Char('y')
+                | KeyCode::Char('Y')
                 | KeyCode::Enter => e.apply_delete(),
                 KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => e.confirm_delete = false,
                 _ => {}
@@ -439,8 +467,14 @@ fn handle_hooks_editor_key(app: &mut App, key: KeyEvent) {
         }
         // Navigation.
         deferred = match key.code {
-            KeyCode::Up | KeyCode::Char('k') => { e.move_sel(-1); None }
-            KeyCode::Down | KeyCode::Char('j') => { e.move_sel(1); None }
+            KeyCode::Up | KeyCode::Char('k') => {
+                e.move_sel(-1);
+                None
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                e.move_sel(1);
+                None
+            }
             KeyCode::Char('a') => {
                 match e.level {
                     HooksLevel::Groups => e.add_group(),
@@ -448,8 +482,14 @@ fn handle_hooks_editor_key(app: &mut App, key: KeyEvent) {
                 }
                 None
             }
-            KeyCode::Char('d') => { e.delete_current(); None }
-            KeyCode::Char('t') => { e.begin_edit_timeout(); None }
+            KeyCode::Char('d') => {
+                e.delete_current();
+                None
+            }
+            KeyCode::Char('t') => {
+                e.begin_edit_timeout();
+                None
+            }
             KeyCode::Enter => {
                 match e.level {
                     HooksLevel::Groups => e.enter(),
@@ -459,7 +499,11 @@ fn handle_hooks_editor_key(app: &mut App, key: KeyEvent) {
             }
             KeyCode::Char('s') => Some(Deferred::Save),
             KeyCode::Esc => {
-                if e.back() { None } else { Some(Deferred::Cancel) }
+                if e.back() {
+                    None
+                } else {
+                    Some(Deferred::Cancel)
+                }
             }
             _ => None,
         };
@@ -496,8 +540,11 @@ fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
             // Niveau catalogue.
             if c.confirm_uninstall {
                 deferred = match key.code {
-                    KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y')
-                    | KeyCode::Char('Y') | KeyCode::Enter => Some(Deferred::Uninstall),
+                    KeyCode::Char('o')
+                    | KeyCode::Char('O')
+                    | KeyCode::Char('y')
+                    | KeyCode::Char('Y')
+                    | KeyCode::Enter => Some(Deferred::Uninstall),
                     KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                         c.confirm_uninstall = false;
                         None
@@ -526,7 +573,10 @@ fn handle_marketplaces_key(app: &mut App, key: KeyEvent) {
             }
         } else if m.confirm_remove {
             deferred = match key.code {
-                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                KeyCode::Char('o')
+                | KeyCode::Char('O')
+                | KeyCode::Char('y')
+                | KeyCode::Char('Y')
                 | KeyCode::Enter => Some(Deferred::Remove),
                 KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                     m.confirm_remove = false;
@@ -603,7 +653,10 @@ fn handle_mcp_editor_key(app: &mut App, key: KeyEvent) {
         };
         if e.confirm_delete {
             match key.code {
-                KeyCode::Char('o') | KeyCode::Char('O') | KeyCode::Char('y') | KeyCode::Char('Y')
+                KeyCode::Char('o')
+                | KeyCode::Char('O')
+                | KeyCode::Char('y')
+                | KeyCode::Char('Y')
                 | KeyCode::Enter => e.apply_delete(),
                 KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => e.confirm_delete = false,
                 _ => {}

@@ -1,7 +1,7 @@
 //! Éditeur de hooks dédié (modal) : navigation hiérarchique
 //! évènement → groupe → commandes, et édition des champs.
 
-use claudine_core::{HookCommand, HookGroup};
+use crate::{HookCommand, HookGroup};
 
 /// Niveau de navigation courant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -286,13 +286,17 @@ fn step(idx: usize, delta: i32, len: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claudine_core::{HookCommand, HookGroup};
+    use crate::{HookCommand, HookGroup};
 
     fn sample() -> Vec<HookGroup> {
         vec![HookGroup {
             event: "PreToolUse".into(),
             matcher: Some("Bash".into()),
-            commands: vec![HookCommand { kind: "command".into(), command: "echo a".into(), timeout: None }],
+            commands: vec![HookCommand {
+                kind: "command".into(),
+                command: "echo a".into(),
+                timeout: None,
+            }],
         }]
     }
 
@@ -361,7 +365,11 @@ mod tests {
         let mut e = HooksEditor::new(vec![HookGroup {
             event: "Stop".into(),
             matcher: None,
-            commands: vec![HookCommand { kind: "command".into(), command: "x".into(), timeout: None }],
+            commands: vec![HookCommand {
+                kind: "command".into(),
+                command: "x".into(),
+                timeout: None,
+            }],
         }]);
         e.enter();
         e.field_idx = 2; // la commande

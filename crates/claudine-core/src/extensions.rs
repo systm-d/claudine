@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
+use crate::error::{CoreError, Result};
 use crate::home::ClaudeHome;
 use crate::settings::SettingsDoc;
-use crate::error::{CoreError, Result};
 
 /// Un hook : un évènement, un éventuel filtre (`matcher`) et ses commandes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -118,7 +118,9 @@ pub fn read_hook_groups(home: &ClaudeHome) -> Vec<HookGroup> {
     };
     let mut out = Vec::new();
     for (event, groups) in hooks {
-        let Some(arr) = groups.as_array() else { continue };
+        let Some(arr) = groups.as_array() else {
+            continue;
+        };
         for group in arr {
             let matcher = group
                 .get("matcher")
@@ -188,7 +190,11 @@ pub fn write_hooks(home: &ClaudeHome, groups: &[HookGroup]) -> Result<()> {
             .iter()
             .map(|c| {
                 let mut cm = Map::new();
-                let kind = if c.kind.is_empty() { "command" } else { &c.kind };
+                let kind = if c.kind.is_empty() {
+                    "command"
+                } else {
+                    &c.kind
+                };
                 cm.insert("type".to_string(), Value::String(kind.to_string()));
                 cm.insert("command".to_string(), Value::String(c.command.clone()));
                 if let Some(t) = c.timeout {
@@ -263,14 +269,26 @@ pub fn read_user_mcp_servers(home: &ClaudeHome) -> Vec<McpServer> {
         out.push(McpServer {
             name: name.clone(),
             transport,
-            command: def.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string(),
+            command: def
+                .get("command")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string(),
             args: def
                 .get("args")
                 .and_then(|a| a.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default(),
             env: read_pairs(def.get("env")),
-            url: def.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+            url: def
+                .get("url")
+                .and_then(|u| u.as_str())
+                .unwrap_or("")
+                .to_string(),
             headers: read_pairs(def.get("headers")),
         });
     }
@@ -336,7 +354,9 @@ fn read_hooks(home: &ClaudeHome) -> Vec<HookEntry> {
             continue;
         };
         for (event, groups) in hooks {
-            let Some(arr) = groups.as_array() else { continue };
+            let Some(arr) = groups.as_array() else {
+                continue;
+            };
             for group in arr {
                 let matcher = group
                     .get("matcher")
@@ -376,7 +396,12 @@ fn read_plugins(home: &ClaudeHome) -> Vec<PluginEntry> {
         .and_then(|v| v.get("enabledPlugins").cloned())
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default();
-    let is_enabled = |name: &str| enabled_map.get(name).and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_enabled = |name: &str| {
+        enabled_map
+            .get(name)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    };
 
     let installed = load_json(&home.plugins_dir().join("installed_plugins.json"))
         .and_then(|v| v.get("plugins").cloned())
@@ -522,7 +547,9 @@ pub fn uninstall_plugin(home: &ClaudeHome, plugin: &str, marketplace: &str) -> R
         .and_then(|v| v.as_array())
         .cloned()
     else {
-        return Err(CoreError::Marketplace(format!("plugin non installé : {key}")));
+        return Err(CoreError::Marketplace(format!(
+            "plugin non installé : {key}"
+        )));
     };
 
     // Entrée de portée `user` (à défaut, la première).
@@ -531,7 +558,9 @@ pub fn uninstall_plugin(home: &ClaudeHome, plugin: &str, marketplace: &str) -> R
         .find(|e| e.get("scope").and_then(|s| s.as_str()) == Some("user"))
         .or_else(|| entries.first());
     let Some(user_entry) = user_entry else {
-        return Err(CoreError::Marketplace(format!("plugin non installé : {key}")));
+        return Err(CoreError::Marketplace(format!(
+            "plugin non installé : {key}"
+        )));
     };
 
     // Valide le chemin de cache à supprimer SANS le supprimer encore : le registre
@@ -550,8 +579,8 @@ pub fn uninstall_plugin(home: &ClaudeHome, plugin: &str, marketplace: &str) -> R
             }
             if path.exists() {
                 let canon = std::fs::canonicalize(&path).map_err(|e| CoreError::io(&path, e))?;
-                let canon_root =
-                    std::fs::canonicalize(&cache_root).map_err(|e| CoreError::io(&cache_root, e))?;
+                let canon_root = std::fs::canonicalize(&cache_root)
+                    .map_err(|e| CoreError::io(&cache_root, e))?;
                 if !canon.starts_with(&canon_root) || canon == canon_root {
                     return Err(CoreError::Marketplace(format!(
                         "chemin d'installation hors cache : {install_path}"
@@ -779,7 +808,10 @@ mod tests {
         let db = servers.iter().find(|s| s.name == "db").unwrap();
         assert!(matches!(db.transport, McpTransport::Http));
         assert_eq!(db.url, "http://localhost:1");
-        assert_eq!(db.headers, vec![("Authorization".to_string(), "Bearer y".to_string())]);
+        assert_eq!(
+            db.headers,
+            vec![("Authorization".to_string(), "Bearer y".to_string())]
+        );
     }
 
     #[test]
@@ -855,7 +887,10 @@ mod tests {
 
     #[test]
     fn uninstall_plugin_removes_cache_entry_and_enabled() {
-        let (_d, home) = home_with(&[("settings.json", r#"{"enabledPlugins":{"foo@m":true,"keep@m":true}}"#)]);
+        let (_d, home) = home_with(&[(
+            "settings.json",
+            r#"{"enabledPlugins":{"foo@m":true,"keep@m":true}}"#,
+        )]);
         let base = home.base.clone();
         // Dossiers de cache réels sous plugins/cache/.
         let foo_cache = base.join("plugins/cache/m/foo/1.0.0");
@@ -876,10 +911,20 @@ mod tests {
         assert!(!foo_cache.exists(), "dossier de cache supprimé");
         let back = read_installed_plugins(&home);
         assert!(back.iter().all(|p| p.name != "foo@m"), "entrée retirée");
-        assert!(back.iter().any(|p| p.name == "keep@m"), "autre entrée préservée");
+        assert!(
+            back.iter().any(|p| p.name == "keep@m"),
+            "autre entrée préservée"
+        );
         let sdoc = SettingsDoc::load(&home.settings_file()).unwrap();
-        assert!(sdoc.get(&["enabledPlugins", "foo@m"]).is_none(), "clé enabled retirée");
-        assert_eq!(sdoc.get_bool(&["enabledPlugins", "keep@m"]), Some(true), "autre clé préservée");
+        assert!(
+            sdoc.get(&["enabledPlugins", "foo@m"]).is_none(),
+            "clé enabled retirée"
+        );
+        assert_eq!(
+            sdoc.get_bool(&["enabledPlugins", "keep@m"]),
+            Some(true),
+            "autre clé préservée"
+        );
     }
 
     #[test]
@@ -901,7 +946,10 @@ mod tests {
 
     #[test]
     fn uninstall_plugin_unknown_key_errors() {
-        let (_d, home) = home_with(&[("plugins/installed_plugins.json", r#"{"version":2,"plugins":{}}"#)]);
+        let (_d, home) = home_with(&[(
+            "plugins/installed_plugins.json",
+            r#"{"version":2,"plugins":{}}"#,
+        )]);
         assert!(uninstall_plugin(&home, "nope", "m").is_err());
     }
 
@@ -933,7 +981,10 @@ mod tests {
         std::fs::set_permissions(&plugins_dir, perms).unwrap();
 
         assert!(res.is_err(), "l'écriture registre doit échouer");
-        assert!(foo_cache.exists(), "cache préservé car la suppression vient après le registre");
+        assert!(
+            foo_cache.exists(),
+            "cache préservé car la suppression vient après le registre"
+        );
     }
 
     #[test]
@@ -951,6 +1002,9 @@ mod tests {
         std::fs::write(base.join("plugins/installed_plugins.json"), installed).unwrap();
 
         assert!(uninstall_plugin(&home, "foo", "m").is_err());
-        assert!(evil_target.exists(), "cible hors cache via `..` non supprimée");
+        assert!(
+            evil_target.exists(),
+            "cible hors cache via `..` non supprimée"
+        );
     }
 }

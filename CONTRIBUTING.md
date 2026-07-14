@@ -7,7 +7,7 @@ l'environnement, les conventions de code et le processus de contribution.
 
 ## Prérequis
 
-- Rust stable ≥ 1.74
+- Rust stable ≥ 1.85
 - `git`
 
 ---
@@ -22,12 +22,12 @@ cargo build --workspace
 cargo test --workspace
 
 # Linter (zéro warning exigé)
-cargo clippy --workspace -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-> **Important :** ce projet est formaté à la main.
-> N'exécutez **pas** `cargo fmt` — le formattage automatique n'est pas utilisé
-> et modifierait des fichiers sans raison.
+> **Important :** ce projet applique `rustfmt` de façon systématique.
+> Exécutez `cargo fmt` avant chaque commit — la CI vérifie `cargo fmt --check`
+> et échoue si le code n'est pas formaté.
 
 ---
 

@@ -45,12 +45,15 @@ assets = [
 ]
 
 [dependencies]
-claudine-core = { path = "../claudine-core" }
-clap = { version = "4", features = ["derive"] }
-ratatui = "0.28"
-serde_json = "1"
+# La version ici est indépendante de [workspace.package] version (racine) :
+# crates.io exige que cette version corresponde à la dernière claudine-core
+# publiée. Les deux doivent donc être bumpées ensemble à chaque release.
+claudine-core = { path = "../claudine-core", version = "0.1.0" }
 
 [dev-dependencies]
-assert_cmd = "2"
-predicates = "3"
-tempfile = "3"
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

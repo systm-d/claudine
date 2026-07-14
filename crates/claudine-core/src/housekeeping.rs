@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{CoreError, Result};
 use crate::pathcodec::encode_cwd;
-use crate::remap::{rewrite_jsonl_line, RemapRule, RemapTable};
+use crate::remap::{RemapRule, RemapTable, rewrite_jsonl_line};
 
 fn nanos() -> u128 {
     SystemTime::now()
@@ -398,7 +398,10 @@ mod tests {
         assert!(pdir.join("a.jsonl").exists());
         assert!(pdir.join("b.jsonl").exists());
         assert!(pdir.join("sessions-index.json").exists());
-        assert!(list_trash(base).is_empty(), "corbeille vidée après restauration");
+        assert!(
+            list_trash(base).is_empty(),
+            "corbeille vidée après restauration"
+        );
     }
 
     #[test]
@@ -412,7 +415,10 @@ mod tests {
 
         let dest = trash_project(base, "-home-kdelfour").unwrap();
         assert!(!pdir.exists(), "projet vide retiré");
-        assert!(dest.join("sessions-index.json").exists(), "contenu préservé en corbeille");
+        assert!(
+            dest.join("sessions-index.json").exists(),
+            "contenu préservé en corbeille"
+        );
     }
 
     #[test]
@@ -473,6 +479,9 @@ mod tests {
 
         let err = move_session(&sess, Some("/home/old/a"), base, "/home/old/b");
         assert!(err.is_err(), "doit refuser d'écraser");
-        assert!(sess.exists(), "l'original doit rester intact en cas de conflit");
+        assert!(
+            sess.exists(),
+            "l'original doit rester intact en cas de conflit"
+        );
     }
 }

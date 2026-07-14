@@ -9,6 +9,22 @@ Versionnage : [Semantic Versioning](https://semver.org/lang/fr/)
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-13
+
+### Aligné sur le standard partagé (`rust-cli-template` + josephine)
+
+- **Structure** : `claudine-core` porte désormais la CLI (`cli.rs` + `commands/*`) et
+  la TUI (`tui/*`) en plus de la logique ; le binaire `claudine` est un shim.
+- **Fondation** : edition 2024, MSRV 1.85, `cargo fmt` adopté (+ gate CI), `[workspace.lints]`
+  (`unsafe_code = forbid`), profil release optimisé (LTO/strip), `rust-toolchain.toml`.
+- **CI/CD** : `ci.yml` (fmt, clippy, matrice de test multi-OS, coverage, sécurité) ;
+  `release.yml` complété (Homebrew, AUR, publication crates.io opt-in) ; `pages.yml`.
+- **Packaging** : recettes AUR et Homebrew (en plus de deb/rpm/winget).
+- **Site** : page d'accueil Zola (hero, fonctionnalités, installation) déployable sur
+  GitHub Pages.
+- **Standards** : `CONVENTIONS.md`, `CLAUDE.md`, `AGENTS.md`, `deny.toml`, `tarpaulin.toml`,
+  `.cargo/audit.toml`, `dependabot.yml`, `CODEOWNERS`.
+
 ## [0.0.2] - 2026-07-13
 
 ### Général
@@ -70,5 +86,6 @@ Ajouté :
 
 ---
 
-[Unreleased]: https://github.com/systm-d/claudine/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/systm-d/claudine/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/systm-d/claudine/releases/tag/v0.1.0
 [0.0.2]: https://github.com/systm-d/claudine/releases/tag/v0.0.2

@@ -60,3 +60,34 @@ fn export_then_import_dry_run_roundtrip() {
     // la cible n'a rien reçu
     assert!(!dst.path().join("projects/-home-new-proj").exists());
 }
+
+#[test]
+fn prints_version() {
+    Command::cargo_bin("claudine")
+        .unwrap()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(contains("claudine 0.1.0"));
+}
+
+#[test]
+fn help_lists_subcommands() {
+    Command::cargo_bin("claudine")
+        .unwrap()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(contains("export"))
+        .stdout(contains("import"))
+        .stdout(contains("homes"));
+}
+
+#[test]
+fn unknown_flag_fails() {
+    Command::cargo_bin("claudine")
+        .unwrap()
+        .arg("--nope")
+        .assert()
+        .failure();
+}

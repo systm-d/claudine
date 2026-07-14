@@ -2,7 +2,7 @@
 //! retrait (confirmation), mise à jour. Les opérations réseau (ajout/màj) sont
 //! exécutées en arrière-plan par `app.rs` ; ce module ne porte que l'état UI.
 
-use claudine_core::{Marketplace, PluginEntry, PluginManifestEntry};
+use crate::{Marketplace, PluginEntry, PluginManifestEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MktMode {
@@ -161,7 +161,7 @@ impl PluginCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claudine_core::{Marketplace, MarketplaceSource};
+    use crate::{Marketplace, MarketplaceSource};
 
     fn mk(name: &str) -> Marketplace {
         Marketplace {
@@ -217,18 +217,30 @@ mod tests {
         assert!(m.selected_name().is_none());
     }
 
-    use claudine_core::{PluginEntry, PluginManifestEntry};
+    use crate::{PluginEntry, PluginManifestEntry};
 
     fn pm(name: &str, desc: Option<&str>) -> PluginManifestEntry {
-        PluginManifestEntry { name: name.into(), description: desc.map(|s| s.to_string()), source: None }
+        PluginManifestEntry {
+            name: name.into(),
+            description: desc.map(|s| s.to_string()),
+            source: None,
+        }
     }
 
     #[test]
     fn catalog_new_marks_installed_and_enabled() {
         let manifest = vec![pm("a", Some("da")), pm("b", None), pm("c", None)];
         let installed = vec![
-            PluginEntry { name: "a@m".into(), enabled: true, ..Default::default() },
-            PluginEntry { name: "b@m".into(), enabled: false, ..Default::default() },
+            PluginEntry {
+                name: "a@m".into(),
+                enabled: true,
+                ..Default::default()
+            },
+            PluginEntry {
+                name: "b@m".into(),
+                enabled: false,
+                ..Default::default()
+            },
         ];
         let cat = PluginCatalog::new("m".into(), &manifest, &installed);
         assert_eq!(cat.entries.len(), 3);
@@ -240,7 +252,11 @@ mod tests {
     #[test]
     fn catalog_nav_and_uninstall_guard() {
         let manifest = vec![pm("a", None), pm("b", None)];
-        let installed = vec![PluginEntry { name: "b@m".into(), enabled: false, ..Default::default() }];
+        let installed = vec![PluginEntry {
+            name: "b@m".into(),
+            enabled: false,
+            ..Default::default()
+        }];
         let mut cat = PluginCatalog::new("m".into(), &manifest, &installed);
         // a (idx 0) non installé → begin_uninstall ne fait rien.
         cat.begin_uninstall();

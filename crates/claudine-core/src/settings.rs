@@ -72,11 +72,12 @@ impl SettingsDoc {
             fs::copy(path, &backup).map_err(|e| CoreError::io(&backup, e))?;
         }
 
-        let pretty = serde_json::to_string_pretty(&self.root).map_err(|e| CoreError::JsonParse {
-            file: path.to_path_buf(),
-            line: 0,
-            source: e,
-        })?;
+        let pretty =
+            serde_json::to_string_pretty(&self.root).map_err(|e| CoreError::JsonParse {
+                file: path.to_path_buf(),
+                line: 0,
+                source: e,
+            })?;
         let tmp = path.with_file_name(format!("{file_name}.tmp"));
         fs::write(&tmp, pretty.as_bytes()).map_err(|e| CoreError::io(&tmp, e))?;
         fs::rename(&tmp, path).map_err(|e| CoreError::io(path, e))?;
@@ -125,7 +126,9 @@ impl SettingsDoc {
             cur = entry;
         }
         let last = path[path.len() - 1].as_ref().to_string();
-        cur.as_object_mut().expect("objet garanti").insert(last, value);
+        cur.as_object_mut()
+            .expect("objet garanti")
+            .insert(last, value);
     }
 
     /// Supprime la feuille au chemin donné (sert à « vider » un champ).
@@ -234,7 +237,13 @@ pub struct FieldSpec {
     pub note: Option<String>,
 }
 
-fn field(path: &[&str], label: &str, section: &str, kind: FieldKind, note: Option<&str>) -> FieldSpec {
+fn field(
+    path: &[&str],
+    label: &str,
+    section: &str,
+    kind: FieldKind,
+    note: Option<&str>,
+) -> FieldSpec {
     FieldSpec {
         path: path.iter().map(|s| s.to_string()).collect(),
         label: label.to_string(),
@@ -255,42 +264,204 @@ pub fn settings_catalog() -> Vec<FieldSpec> {
     vec![
         // Général
         field(&["model"], "Modèle", "Général", Text, None),
-        field(&["effortLevel"], "Niveau d'effort", "Général", en(&["", "low", "medium", "high", "xhigh"]), None),
+        field(
+            &["effortLevel"],
+            "Niveau d'effort",
+            "Général",
+            en(&["", "low", "medium", "high", "xhigh"]),
+            None,
+        ),
         field(&["outputStyle"], "Style de sortie", "Général", Text, None),
         field(&["language"], "Langue", "Général", Text, None),
-        field(&["theme"], "Thème", "Général", Text, Some("vide = auto/null")),
-        field(&["editorMode"], "Mode éditeur", "Général", en(&["", "normal", "vim"]), None),
-        field(&["tui"], "Rendu TUI", "Général", en(&["", "classic", "fullscreen"]), None),
-        field(&["autoUpdatesChannel"], "Canal de mise à jour", "Général", en(&["", "latest", "stable"]), None),
+        field(
+            &["theme"],
+            "Thème",
+            "Général",
+            Text,
+            Some("vide = auto/null"),
+        ),
+        field(
+            &["editorMode"],
+            "Mode éditeur",
+            "Général",
+            en(&["", "normal", "vim"]),
+            None,
+        ),
+        field(
+            &["tui"],
+            "Rendu TUI",
+            "Général",
+            en(&["", "classic", "fullscreen"]),
+            None,
+        ),
+        field(
+            &["autoUpdatesChannel"],
+            "Canal de mise à jour",
+            "Général",
+            en(&["", "latest", "stable"]),
+            None,
+        ),
         // Comportement
-        field(&["alwaysThinkingEnabled"], "Réflexion étendue par défaut", "Comportement", Bool, None),
-        field(&["autoCompactEnabled"], "Auto-compactage", "Comportement", Bool, None),
-        field(&["autoMemoryEnabled"], "Mémoire auto", "Comportement", Bool, None),
-        field(&["fileCheckpointingEnabled"], "Snapshots de fichiers", "Comportement", Bool, None),
-        field(&["respectGitignore"], "Respecter .gitignore", "Comportement", Bool, None),
-        field(&["spinnerTipsEnabled"], "Astuces du spinner", "Comportement", Bool, None),
-        field(&["verboseOutput"], "Sortie verbeuse", "Comportement", Bool, None),
-        field(&["includeCoAuthoredBy"], "Co-authored-by", "Comportement", Bool, Some("déprécié — préférez attribution")),
-        field(&["cleanupPeriodDays"], "Rétention sessions (jours)", "Comportement", Number, None),
+        field(
+            &["alwaysThinkingEnabled"],
+            "Réflexion étendue par défaut",
+            "Comportement",
+            Bool,
+            None,
+        ),
+        field(
+            &["autoCompactEnabled"],
+            "Auto-compactage",
+            "Comportement",
+            Bool,
+            None,
+        ),
+        field(
+            &["autoMemoryEnabled"],
+            "Mémoire auto",
+            "Comportement",
+            Bool,
+            None,
+        ),
+        field(
+            &["fileCheckpointingEnabled"],
+            "Snapshots de fichiers",
+            "Comportement",
+            Bool,
+            None,
+        ),
+        field(
+            &["respectGitignore"],
+            "Respecter .gitignore",
+            "Comportement",
+            Bool,
+            None,
+        ),
+        field(
+            &["spinnerTipsEnabled"],
+            "Astuces du spinner",
+            "Comportement",
+            Bool,
+            None,
+        ),
+        field(
+            &["verboseOutput"],
+            "Sortie verbeuse",
+            "Comportement",
+            Bool,
+            None,
+        ),
+        field(
+            &["includeCoAuthoredBy"],
+            "Co-authored-by",
+            "Comportement",
+            Bool,
+            Some("déprécié — préférez attribution"),
+        ),
+        field(
+            &["cleanupPeriodDays"],
+            "Rétention sessions (jours)",
+            "Comportement",
+            Number,
+            None,
+        ),
         // Permissions
-        field(&["permissions", "defaultMode"], "Mode par défaut", "Permissions", en(&["", "prompt", "auto", "human"]), None),
-        field(&["permissions", "allow"], "Autorisé (allow)", "Permissions", StringList, None),
-        field(&["permissions", "deny"], "Bloqué (deny)", "Permissions", StringList, None),
-        field(&["permissions", "ask"], "Demander (ask)", "Permissions", StringList, None),
-        field(&["permissions", "additionalDirectories"], "Dossiers additionnels", "Permissions", StringList, None),
-        field(&["permissions", "disableBypassPermissionsMode"], "Bloquer le bypass", "Permissions", Bool, None),
+        field(
+            &["permissions", "defaultMode"],
+            "Mode par défaut",
+            "Permissions",
+            en(&["", "prompt", "auto", "human"]),
+            None,
+        ),
+        field(
+            &["permissions", "allow"],
+            "Autorisé (allow)",
+            "Permissions",
+            StringList,
+            None,
+        ),
+        field(
+            &["permissions", "deny"],
+            "Bloqué (deny)",
+            "Permissions",
+            StringList,
+            None,
+        ),
+        field(
+            &["permissions", "ask"],
+            "Demander (ask)",
+            "Permissions",
+            StringList,
+            None,
+        ),
+        field(
+            &["permissions", "additionalDirectories"],
+            "Dossiers additionnels",
+            "Permissions",
+            StringList,
+            None,
+        ),
+        field(
+            &["permissions", "disableBypassPermissionsMode"],
+            "Bloquer le bypass",
+            "Permissions",
+            Bool,
+            None,
+        ),
         // Environnement
-        field(&["env"], "Variables d'environnement", "Environnement", FieldKind::KeyValue, None),
+        field(
+            &["env"],
+            "Variables d'environnement",
+            "Environnement",
+            FieldKind::KeyValue,
+            None,
+        ),
         // MCP
-        field(&["enableAllProjectMcpServers"], "Auto-approuver MCP projet", "MCP", Bool, None),
-        field(&["enabledMcpjsonServers"], "Serveurs .mcp.json activés", "MCP", StringList, None),
-        field(&["disabledMcpjsonServers"], "Serveurs .mcp.json refusés", "MCP", StringList, None),
+        field(
+            &["enableAllProjectMcpServers"],
+            "Auto-approuver MCP projet",
+            "MCP",
+            Bool,
+            None,
+        ),
+        field(
+            &["enabledMcpjsonServers"],
+            "Serveurs .mcp.json activés",
+            "MCP",
+            StringList,
+            None,
+        ),
+        field(
+            &["disabledMcpjsonServers"],
+            "Serveurs .mcp.json refusés",
+            "MCP",
+            StringList,
+            None,
+        ),
         // Attribution / Git
-        field(&["attribution", "commit"], "Attribution commit", "Attribution / Git", Text, None),
-        field(&["attribution", "pr"], "Attribution PR", "Attribution / Git", Text, None),
+        field(
+            &["attribution", "commit"],
+            "Attribution commit",
+            "Attribution / Git",
+            Text,
+            None,
+        ),
+        field(
+            &["attribution", "pr"],
+            "Attribution PR",
+            "Attribution / Git",
+            Text,
+            None,
+        ),
         // Avancé
         field(&["apiKeyHelper"], "Script clé API", "Avancé", Text, None),
-        field(&["minimumVersion"], "Version minimale", "Avancé", Text, None),
+        field(
+            &["minimumVersion"],
+            "Version minimale",
+            "Avancé",
+            Text,
+            None,
+        ),
     ]
 }
 
@@ -317,7 +488,10 @@ mod tests {
         doc.save(&path).unwrap();
 
         let reloaded = SettingsDoc::load(&path).unwrap();
-        assert_eq!(reloaded.get_str(&["permissions", "defaultMode"]), Some("auto"));
+        assert_eq!(
+            reloaded.get_str(&["permissions", "defaultMode"]),
+            Some("auto")
+        );
         assert_eq!(reloaded.get_bool(&["alwaysThinkingEnabled"]), Some(true));
         // clés inconnues préservées
         assert!(reloaded.get(&["$schema"]).is_some());
@@ -368,7 +542,10 @@ mod tests {
         assert_eq!(doc.get_i64(&["n"]), Some(30));
         assert_eq!(doc.get_str(&["s"]), Some("hi"));
         assert_eq!(doc.get_str_list(&["l"]), Some(vec!["a".into(), "b".into()]));
-        assert_eq!(doc.get_pairs(&["env"]), vec![("FOO".to_string(), "bar".to_string())]);
+        assert_eq!(
+            doc.get_pairs(&["env"]),
+            vec![("FOO".to_string(), "bar".to_string())]
+        );
         // type incompatible / absent
         assert_eq!(doc.get_bool(&["s"]), None);
         assert_eq!(doc.get_str(&["absent"]), None);
@@ -379,9 +556,10 @@ mod tests {
         let mut doc = SettingsDoc::empty();
         doc.set_bool(&["permissions", "disableBypassPermissionsMode"], true);
         doc.unset(&["permissions", "disableBypassPermissionsMode"]);
-        assert!(doc
-            .get(&["permissions", "disableBypassPermissionsMode"])
-            .is_none());
+        assert!(
+            doc.get(&["permissions", "disableBypassPermissionsMode"])
+                .is_none()
+        );
     }
 
     #[test]

@@ -3,11 +3,35 @@ resolver = "2"
 members = ["crates/claudine-core", "crates/claudine"]
 
 [workspace.package]
-edition = "2021"
-rust-version = "1.74"
-version = "0.0.2"
+edition = "2024"
+rust-version = "1.85"
+version = "0.1.0"
 license = "MIT OR Apache-2.0"
 description = "Outil Rust TUI/CLI pour naviguer et gérer les données locales de Claude Code (~/.claude)."
 repository = "https://github.com/systm-d/claudine"
 homepage = "https://github.com/systm-d/claudine"
-authors = ["systm-d"]
+authors = ["systm-d <k@levilainpetit.dev>"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "1"
+tar = "0.4"
+flate2 = "1"
+clap = { version = "4", features = ["derive"] }
+ratatui = "0.28"
+anyhow = "1"
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

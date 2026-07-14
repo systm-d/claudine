@@ -22,8 +22,7 @@ pub fn scan_projects(home: &ClaudeHome) -> Result<Vec<Project>> {
         }
         let encoded_name = entry.file_name().to_string_lossy().into_owned();
         let mut sessions = Vec::new();
-        let session_entries =
-            fs::read_dir(&path).map_err(|e| CoreError::io(&path, e))?;
+        let session_entries = fs::read_dir(&path).map_err(|e| CoreError::io(&path, e))?;
         for s in session_entries {
             let s = s.map_err(|e| CoreError::io(&path, e))?;
             let sp = s.path();
