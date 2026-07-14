@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero">
+  <div class="topbar"><span class="wordmark">Claudine</span></div>
+  <div class="glyph" aria-hidden="true">▐▛███▜▌<br>▝▜█████▛▘<br>&nbsp;&nbsp;▘▘ ▝▝</div>
+  <h1>{{ section.extra.tagline }}</h1>
+  <p class="lede">{{ section.extra.lede }}</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="#install">{{ section.extra.cta2 }}</a>
+    <a class="btn" href="{{ config.extra.repo_url }}">{{ section.extra.cta }}</a>
+  </div>
+</header>
+<main>{{ section.content | safe }}</main>
+{% endblock %}

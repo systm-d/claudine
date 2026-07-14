@@ -1,0 +1,13 @@
+base_url = "https://systm-d.github.io/claudine"
+title = "Claudine"
+description = "Gère tes données Claude Code, sans quitter le terminal."
+compile_sass = true
+build_search_index = false
+generate_feeds = false
+
+[markdown]
+highlight_code = true
+
+[extra]
+brand_color = "#d97757"
+repo_url = "https://github.com/systm-d/claudine"
