@@ -35,7 +35,8 @@ sudo rpm -i claudine-*.rpm
 yay -S claudine
 
 # Homebrew
-brew install systm-d/tap/claudine
+brew tap systm-d/claudine https://github.com/systm-d/claudine
+brew install claudine
 ```
 
 </section>

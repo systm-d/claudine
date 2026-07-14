@@ -45,6 +45,9 @@ assets = [
 ]
 
 [dependencies]
+# La version ici est indépendante de [workspace.package] version (racine) :
+# crates.io exige que cette version corresponde à la dernière claudine-core
+# publiée. Les deux doivent donc être bumpées ensemble à chaque release.
 claudine-core = { path = "../claudine-core", version = "0.1.0" }
 
 [dev-dependencies]

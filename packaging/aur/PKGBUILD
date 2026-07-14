@@ -1,6 +1,6 @@
 # Maintainer: systm-d <k@levilainpetit.dev>
 pkgname=claudine
-pkgver=0.0.2
+pkgver=0.1.0
 pkgrel=1
 pkgdesc="Outil Rust TUI/CLI pour naviguer et gérer les données locales de Claude Code (~/.claude)"
 arch=('x86_64')

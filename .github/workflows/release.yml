@@ -134,54 +134,11 @@ jobs:
           path: target/generate-rpm/*.rpm
 
   # ---------------------------------------------------------------------------
-  # Paquet Arch Linux (.pkg.tar.zst)
-  # ---------------------------------------------------------------------------
-  arch:
-    name: Paquet Arch (.pkg.tar.zst)
-    runs-on: ubuntu-latest
-    container: archlinux:latest
-    steps:
-      - name: Installer les dépendances
-        # nodejs est requis par les actions JS (checkout, upload-artifact) dans
-        # un conteneur sans Node ; base-devel + rustup pour makepkg/cargo.
-        run: pacman -Syu --noconfirm base-devel rustup git nodejs
-      - name: Initialiser la toolchain Rust
-        run: rustup default stable
-
-      - uses: actions/checkout@v4
-
-      - name: Préparer l'arborescence de build
-        shell: bash
-        run: |
-          ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          echo "PKGVER=$ver" >> "$GITHUB_ENV"
-          # makepkg refuse de tourner en root : on crée un utilisateur dédié.
-          useradd -m builder
-          # Archive source locale attendue par le PKGBUILD.
-          git config --global --add safe.directory "$PWD"
-          git archive --format=tar.gz --prefix="claudine-$ver/" -o "packaging/arch/claudine-$ver.tar.gz" HEAD
-          # sed la version dans le PKGBUILD au cas où le tag diffère.
-          sed -i "s/^pkgver=.*/pkgver=$ver/" packaging/arch/PKGBUILD
-          cp -r packaging/arch /tmp/build
-          chown -R builder:builder /tmp/build
-
-      - name: makepkg
-        run: |
-          cd /tmp/build
-          sudo -u builder makepkg -f --noconfirm
-
-      - name: Upload artefact
-        uses: actions/upload-artifact@v4
-        with:
-          name: claudine-arch
-          path: /tmp/build/*.pkg.tar.zst
-
-  # ---------------------------------------------------------------------------
   # Release GitHub (uniquement sur tag) : agrège tous les artefacts
   # ---------------------------------------------------------------------------
   release:
     name: Publier la release
-    needs: [binaries, debian, fedora, arch]
+    needs: [binaries, debian, fedora]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -195,6 +152,8 @@ jobs:
       # Rend la formule Homebrew et le PKGBUILD AUR à partir des gabarits
       # packaging/ : URL + sha256 du tarball source de ce tag. Les deux
       # recettes pointent sur la même archive, donc partagent le même sha256.
+      # Gabarit manquant (ex. tag antérieur à leur ajout) : on saute juste ce
+      # rendu, sans faire échouer le reste de la release (binaires/deb/rpm).
       - name: Rendre la formule Homebrew et le PKGBUILD AUR
         env:
           GH_REPO: ${{ github.repository }}
@@ -204,21 +163,30 @@ jobs:
           url="https://github.com/${GH_REPO}/archive/refs/tags/${TAG}.tar.gz"
           sha=$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)
 
-          sed \
-            -e "s|url \".*\"|url \"${url}\"|" \
-            -e "s|sha256 \"[0-9a-f]*\"|sha256 \"${sha}\"|" \
-            -e "/# Placeholder: release.yml/d" \
-            packaging/homebrew/claudine.rb > claudine.rb
+          if [ -f packaging/homebrew/claudine.rb ]; then
+            sed \
+              -e "s|url \".*\"|url \"${url}\"|" \
+              -e "s|sha256 \"[0-9a-f]*\"|sha256 \"${sha}\"|" \
+              -e "/# Placeholder: release.yml/d" \
+              packaging/homebrew/claudine.rb > claudine.rb
+            echo "Rendu claudine.rb pour ${TAG} (sha256 ${sha}) :"
+            cat claudine.rb
+          else
+            echo "packaging/homebrew/claudine.rb absent — formule Homebrew ignorée pour cette release."
+          fi
 
-          sed \
-            -e "s|^pkgver=.*|pkgver=${version}|" \
-            -e "s|^sha256sums=('[0-9a-f]*')|sha256sums=('${sha}')|" \
-            -e "/# Fill with the real checksum/d" \
-            -e "/# release tarball's sha256/d" \
-            packaging/aur/PKGBUILD > PKGBUILD
-
-          echo "Rendu claudine.rb et PKGBUILD pour ${TAG} (sha256 ${sha}) :"
-          cat claudine.rb PKGBUILD
+          if [ -f packaging/aur/PKGBUILD ]; then
+            sed \
+              -e "s|^pkgver=.*|pkgver=${version}|" \
+              -e "s|^sha256sums=('[0-9a-f]*')|sha256sums=('${sha}')|" \
+              -e "/# Fill with the real checksum/d" \
+              -e "/# release tarball's sha256/d" \
+              packaging/aur/PKGBUILD > PKGBUILD
+            echo "Rendu PKGBUILD pour ${TAG} (sha256 ${sha}) :"
+            cat PKGBUILD
+          else
+            echo "packaging/aur/PKGBUILD absent — PKGBUILD AUR ignoré pour cette release."
+          fi
 
       - name: Publier la release
         uses: softprops/action-gh-release@v2
@@ -230,8 +198,10 @@ jobs:
           generate_release_notes: true
 
   # ---------------------------------------------------------------------------
-  # Homebrew (macOS) : met à jour Formula/claudine.rb sur la branche par défaut.
-  # Installation côté utilisateur :
+  # Homebrew (macOS) : rend Formula/claudine.rb sur la branche par défaut à
+  # partir du gabarit packaging/homebrew/claudine.rb (source de vérité unique,
+  # même sed que le rendu de l'asset de release ci-dessus). Installation
+  # côté utilisateur :
   #   brew tap systm-d/claudine https://github.com/systm-d/claudine
   #   brew install claudine
   # ---------------------------------------------------------------------------
@@ -253,15 +223,19 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          if [ ! -f Formula/claudine.rb ]; then
-            echo "Formula/claudine.rb absente sur main (branche pas encore mergée) — étape ignorée."
+          if [ ! -f packaging/homebrew/claudine.rb ]; then
+            echo "packaging/homebrew/claudine.rb absent sur main (branche pas encore mergée) — étape ignorée."
             exit 0
           fi
           version="${TAG#v}"
           url="https://github.com/${GH_REPO}/archive/refs/tags/${TAG}.tar.gz"
           sha=$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)
-          sed -i -E "s|^  url \".*\"|  url \"${url}\"|" Formula/claudine.rb
-          sed -i -E "s|^  sha256 \".*\"|  sha256 \"${sha}\"|" Formula/claudine.rb
+          mkdir -p Formula
+          sed \
+            -e "s|url \".*\"|url \"${url}\"|" \
+            -e "s|sha256 \"[0-9a-f]*\"|sha256 \"${sha}\"|" \
+            -e "/# Placeholder: release.yml/d" \
+            packaging/homebrew/claudine.rb > Formula/claudine.rb
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/claudine.rb
@@ -339,7 +313,7 @@ jobs:
   crates-io:
     name: Publier sur crates.io
     needs: [binaries]
-    if: ${{ vars.PUBLISH_CRATES == 'true' }}
+    if: ${{ vars.PUBLISH_CRATES == 'true' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
