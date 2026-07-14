@@ -209,3 +209,15 @@ Task 12: complete — clôture 0.1.0. TDD : 3 tests ajoutés à cli.rs (prints_v
 Task 12: complete (commit 22386ab + fix ed1577e, review clean après correctif) — tests/cli.rs +3 (prints_version 0.1.0, help, unknown-flag ; 2 existants conservés) ; version workspace 0.0.2→0.1.0 ; path-dep claudine-core version=0.1.0 ; deny skip retiré (bans ok sans unnecessary-skip) ; commentaire RUSTSEC-2024-0436 corrigé (paste = dep direct de ratatui) ; CONTRIBUTING/CONVENTIONS fmt+MSRV alignés ; CHANGELOG [0.1.0] ; README badges/site/install ; highlight_code=false. Fix ed1577e : README « Développement » ne contredit plus la politique fmt + MSRV 1.74→1.85. Gate HEAD : fmt OK, 165 tests, zola OK, --version=claudine 0.1.0.
 
 ## TOUTES LES TÂCHES T1-T12 COMPLÈTES. Reste : revue finale whole-branch (opus) + vague de correctifs (cluster release.yml : arch path, doublon homebrew, garde fichier absent) + finishing-a-development-branch.
+
+## REVUE FINALE whole-branch (opus, 7b99171..a4f6813) : « Ready to merge — With fixes »
+Workspace jugé merge-safe (restructuration behavior-preserving, gate verte). Défauts pipeline release confirmés + trouvés :
+- [C1] job arch pointe packaging/arch/ supprimé → toute la release casse au prochain tag ; + PKGBUILD URL-source+hex-zéros incompatible avec le build makepkg local.
+- [I2] doublon homebrew ; la formule d'asset était CASSÉE (cargo install sans path: → manifeste virtuel).
+- [I3] pas de garde fichier-absent sur le rendu. [I4] commande brew du site fausse (tap inexistant). Minors : crates-io non tag-gated, versions packaging 0.0.2, couplage version path-dep, readme hors package (crates.io, hors-scope), MSRV non vérifiée.
+
+## VAGUE DE CORRECTIFS (une seule, commits 70e4f28 + e6c60e1) — RE-REVUE : « sound & complete: Yes »
+1. Job arch SUPPRIMÉ (non standard Arch ; AUR/yay couvre) + retiré des needs. 2. Formule homebrew unique packaging/homebrew/claudine.rb CORRIGÉE (path: crates/claudine) ; Formula/claudine.rb supprimé, rendu depuis la source unique par le job tap ET l'asset. 3. Gardes [ -f ] sur les rendus. 4. Site brew = tap+install (comme README). 5. crates-io tag-gated (startsWith refs/tags/v). 6. Versions packaging → 0.1.0 (checksums restent 64 zéros hex). 7. Commentaire couplage version path-dep. 8. README Arch → AUR/yay (plus de pacman -U).
+Vérifs re-revue : YAML OK, sed toujours alignés post-bump, aucune réf pendante à Formula/claudine.rb ni au job arch, cohérence version 0.1.0 de bout en bout.
+
+## ÉTAT FINAL : branche claudine-template-alignment COMPLÈTE (HEAD e6c60e1). Gate HEAD verte (fmt, clippy, 165 tests, build release, zola, --version=0.1.0, deny bans ok). Reste : finishing-a-development-branch + merge sur main (nécessite feu vert explicite utilisateur). NB : release.yml ne se valide vraiment qu'au 1er tag réel (Actions) — préoccupation go-live.
