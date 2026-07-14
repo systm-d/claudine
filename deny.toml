@@ -7,11 +7,11 @@
 version = 2
 yanked = "deny"
 ignore = [
-    # paste (RUSTSEC-2024-0436) is unmaintained. It is a transitive proc-macro
-    # dependency of ratatui 0.28 (via lru/paste), used only at compile time to
-    # generate code; no runtime impact and no safe upgrade is available yet.
-    # Revisit when ratatui bumps its `lru`/`paste` dependency.
-    { id = "RUSTSEC-2024-0436", reason = "Unmaintained transitive proc-macro dep of ratatui (via lru); compile-time only, no safe upgrade available yet." },
+    # paste (RUSTSEC-2024-0436) is unmaintained. It is a direct proc-macro
+    # dependency of ratatui 0.28, used only at compile time to generate code;
+    # no runtime impact and no safe upgrade is available yet.
+    # Revisit when ratatui bumps its `paste` dependency.
+    { id = "RUSTSEC-2024-0436", reason = "Unmaintained direct proc-macro dep of ratatui 0.28; compile-time only, no safe upgrade available yet." },
 ]
 
 [licenses]
@@ -39,15 +39,6 @@ confidence-threshold = 0.9
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
-# `claudine` depends on the internal workspace crate `claudine-core` via a
-# path dependency without a version (crates/claudine/Cargo.toml). cargo-deny's
-# built-in `allow-wildcard-paths` exception only applies to crates marked
-# `publish = false`, and touching Cargo.toml is out of scope for this
-# config-only task — so the wildcard is skipped explicitly instead of
-# flagged as an unpinned external dependency.
-skip = [
-    { crate = "claudine", reason = "path dependency on claudine-core (internal workspace crate, not published to crates.io) is intentional, not an unpinned external dep" },
-]
 
 [sources]
 unknown-registry = "deny"

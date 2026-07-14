@@ -6,7 +6,9 @@ instead of restating these rules.
 
 ## Language & Edition
 
-- Rust **edition 2024**, MSRV **1.85** (pinned via `rust-toolchain.toml`).
+- Rust **edition 2024**, MSRV **1.85** (pinned via `Cargo.toml`'s
+  `[workspace.package] rust-version = "1.85"`; `rust-toolchain.toml` only pins
+  the toolchain channel (stable) and components).
 - Formatting: `rustfmt` with `max_width = 100`, edition 2024 (`rustfmt.toml`).
   `cargo fmt --check` must pass.
 - Lints: `unsafe_code = "forbid"`; clippy `all = { level = "warn", priority = -1 }`,

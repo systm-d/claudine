@@ -25,7 +25,7 @@ main { max-width: 62rem; margin: 0 auto; padding: 0 1.25rem; }
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 .card { background: var(--panel); border-radius: .75rem; padding: 1.1rem 1.25rem; }
 .card h3 { margin: 0 0 .4rem; color: var(--brand); }
-.install pre { background: var(--panel) !important; color: var(--fg) !important; padding: 1.25rem; border-radius: .75rem;
+.install pre { background: var(--panel); color: var(--fg); padding: 1.25rem; border-radius: .75rem;
   overflow-x: auto; font-family: var(--mono); }
 .footer { max-width: 62rem; margin: 3rem auto 2rem; padding: 0 1.25rem;
   color: var(--muted); text-align: center; }

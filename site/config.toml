@@ -6,7 +6,7 @@ build_search_index = false
 generate_feeds = false
 
 [markdown]
-highlight_code = true
+highlight_code = false
 
 [extra]
 brand_color = "#d97757"

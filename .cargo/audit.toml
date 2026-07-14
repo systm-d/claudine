@@ -2,9 +2,9 @@
 # (cargo-audit does not read deny.toml, hence this separate file.)
 [advisories]
 ignore = [
-    # paste (RUSTSEC-2024-0436) is unmaintained. It is a transitive proc-macro
-    # dependency of ratatui 0.28 (via lru/paste), used only at compile time to
-    # generate code; no runtime impact and no safe upgrade is available yet.
-    # Revisit when ratatui bumps its `lru`/`paste` dependency.
+    # paste (RUSTSEC-2024-0436) is unmaintained. It is a direct proc-macro
+    # dependency of ratatui 0.28, used only at compile time to generate code;
+    # no runtime impact and no safe upgrade is available yet.
+    # Revisit when ratatui bumps its `paste` dependency.
     "RUSTSEC-2024-0436",
 ]

@@ -45,7 +45,7 @@ assets = [
 ]
 
 [dependencies]
-claudine-core = { path = "../claudine-core" }
+claudine-core = { path = "../claudine-core", version = "0.1.0" }
 
 [dev-dependencies]
 assert_cmd.workspace = true

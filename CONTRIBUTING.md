@@ -25,9 +25,9 @@ cargo test --workspace
 cargo clippy --workspace -- -D warnings
 ```
 
-> **Important :** ce projet est formaté à la main.
-> N'exécutez **pas** `cargo fmt` — le formattage automatique n'est pas utilisé
-> et modifierait des fichiers sans raison.
+> **Important :** ce projet applique `rustfmt` de façon systématique.
+> Exécutez `cargo fmt` avant chaque commit — la CI vérifie `cargo fmt --check`
+> et échoue si le code n'est pas formaté.
 
 ---
 

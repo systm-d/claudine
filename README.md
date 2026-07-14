@@ -13,7 +13,10 @@ et extensions (hooks, plugins, serveurs MCP).
 
 [![Licence](https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-blue)](#licence)
 [![CI](https://github.com/systm-d/claudine/actions/workflows/ci.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/ci.yml)
+[![Pages](https://github.com/systm-d/claudine/actions/workflows/pages.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/pages.yml)
 [![Release](https://github.com/systm-d/claudine/actions/workflows/release.yml/badge.svg)](https://github.com/systm-d/claudine/actions/workflows/release.yml)
+
+**Site :** <https://systm-d.github.io/claudine>
 
 ---
 
@@ -54,7 +57,15 @@ et extensions (hooks, plugins, serveurs MCP).
 
 ## Installation
 
-Rust ≥ 1.74 requis.
+### Cargo (crates.io)
+
+```sh
+cargo install claudine
+```
+
+### Depuis les sources
+
+Rust ≥ 1.85 requis.
 
 ```sh
 git clone https://github.com/systm-d/claudine
@@ -89,6 +100,16 @@ sudo pacman -U claudine-*.pkg.tar.zst
 ```
 
 #### Gestionnaires de paquets
+
+**Arch Linux — AUR :**
+
+Chaque release publie aussi un `PKGBUILD` prêt à l'emploi
+([`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD)) :
+
+```sh
+curl -LO https://github.com/systm-d/claudine/releases/latest/download/PKGBUILD
+makepkg -si
+```
 
 **macOS — Homebrew :**
 
