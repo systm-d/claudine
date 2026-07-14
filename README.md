@@ -204,10 +204,14 @@ cargo build --workspace
 cargo test --workspace
 
 # Linter
-cargo clippy --workspace -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
+
+# Formatage (rustfmt.toml : edition 2024, max_width 100)
+cargo fmt
 ```
 
-> **Note :** ce projet est formaté à la main. N'exécutez **pas** `cargo fmt`.
+> **Note :** ce projet utilise `cargo fmt` ; la CI vérifie `cargo fmt --check`.
+> Exécutez `cargo fmt` avant chaque commit.
 
 ---
 
