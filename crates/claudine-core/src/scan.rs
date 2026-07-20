@@ -30,7 +30,12 @@ pub fn scan_projects(home: &ClaudeHome) -> Result<Vec<Project>> {
                 sessions.push(read_session_meta(&sp)?);
             }
         }
-        sessions.sort_by(|a, b| a.id.cmp(&b.id));
+        // Tri par date de création (premier timestamp) décroissante : les
+        // sessions les plus récentes en tête. Les timestamps sont au format
+        // RFC 3339 (UTC), donc l'ordre lexicographique est chronologique. Les
+        // sessions sans timestamp passent en dernier ; `id` départage à égalité
+        // pour un ordre stable.
+        sessions.sort_by(|a, b| b.first_ts.cmp(&a.first_ts).then_with(|| a.id.cmp(&b.id)));
         // cwd réel : depuis les sessions ; sinon, tentative de résolution du
         // chemin via sondage du système de fichiers (sinon on gardera le nom encodé).
         let cwd = sessions
@@ -123,6 +128,43 @@ mod tests {
         assert_eq!(s.first_ts.as_deref(), Some("2026-01-01T10:00:00Z"));
         assert_eq!(s.last_ts.as_deref(), Some("2026-01-01T10:01:00Z"));
         assert_eq!(s.cwd.as_deref(), Some("/home/old/proj"));
+    }
+
+    #[test]
+    fn sessions_sorted_by_creation_date_desc() {
+        let fake = FakeHome::new();
+        // Ajoutées dans le désordre chronologique ; l'id ne reflète pas la date.
+        fake.add_session(
+            "-proj",
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            &[r#"{"type":"user","cwd":"/proj","timestamp":"2026-02-01T00:00:00Z"}"#],
+        );
+        fake.add_session(
+            "-proj",
+            "cccccccc-cccc-cccc-cccc-cccccccccccc",
+            &[r#"{"type":"user","cwd":"/proj","timestamp":"2026-05-01T00:00:00Z"}"#],
+        );
+        fake.add_session(
+            "-proj",
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            &[r#"{"type":"user","cwd":"/proj","timestamp":"2026-03-01T00:00:00Z"}"#],
+        );
+        // Sans timestamp : doit finir en dernier.
+        fake.add_session("-proj", "dddddddd-dddd-dddd-dddd-dddddddddddd", &["{}"]);
+
+        let home = ClaudeHome::from_base(fake.base());
+        let projects = scan_projects(&home).unwrap();
+        let ids: Vec<&str> = projects[0].sessions.iter().map(|s| s.id.as_str()).collect();
+
+        assert_eq!(
+            ids,
+            vec![
+                "cccccccc-cccc-cccc-cccc-cccccccccccc", // 2026-05
+                "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", // 2026-03
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", // 2026-02
+                "dddddddd-dddd-dddd-dddd-dddddddddddd", // sans date → dernier
+            ]
+        );
     }
 
     #[test]

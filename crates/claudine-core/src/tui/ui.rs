@@ -323,7 +323,8 @@ fn render_transcript(app: &mut App, f: &mut Frame, area: Rect) {
     let (proj_name, sess_id) = match (app.selected_project(), app.selected_session()) {
         (Some(p), Some(s)) => {
             let name = humanize_path(&p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone()));
-            (name, s.id.chars().take(8).collect::<String>())
+            // Identifiant complet : sélectionnable/copiable (`y` ou souris).
+            (name, s.id.clone())
         }
         _ => ("?".to_string(), "?".to_string()),
     };
@@ -335,7 +336,7 @@ fn render_transcript(app: &mut App, f: &mut Frame, area: Rect) {
             title,
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ))
-        .title(Line::from(" Esc retour ").right_aligned());
+        .title(Line::from(" y copier l'id · Esc retour ").right_aligned());
     let inner = block.inner(area);
     f.render_widget(block, area);
     app.transcript_viewport = inner.height as usize;
@@ -921,7 +922,11 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("Enter", "ouvrir la session sélectionnée"),
         ("Espace", "replier / déplier le home courant (agrégé)"),
         ("z", "tout replier / tout déplier (agrégé)"),
-        ("/", "rechercher (live chemin/id · Tab = contenu)"),
+        ("/", "rechercher (live chemin/id · Tab/Entrée = contenu)"),
+        (
+            "y",
+            "copier l'identifiant complet de la session sélectionnée",
+        ),
         (
             "d / Suppr",
             "→ corbeille : session (panneau Sessions) ou projet (panneau Projets)",
@@ -1198,7 +1203,7 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
             " Rechercher une session ",
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ))
-        .title(Line::from(" Tab contenu · Enter ouvrir · Esc fermer ").right_aligned());
+        .title(Line::from(" Tab/Entrée contenu · Entrée ouvrir · Esc fermer ").right_aligned());
     let inner = block.inner(popup);
     f.render_widget(block, popup);
 
@@ -1229,7 +1234,7 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
     if s.query.trim().is_empty() {
         f.render_widget(
             Paragraph::new(Span::styled(
-                "  Tapez pour filtrer par chemin / id (en direct). Tab : chercher dans le contenu.",
+                "  Tapez pour filtrer par chemin / id (en direct). Tab ou Entrée : chercher dans le contenu.",
                 Style::default().fg(DIM),
             )),
             rows[1],
@@ -1239,7 +1244,7 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
     if s.results.is_empty() {
         f.render_widget(
             Paragraph::new(Span::styled(
-                "  Aucun résultat. Tab pour chercher dans le contenu des sessions.",
+                "  Aucun résultat par chemin / id. Tab ou Entrée : chercher dans le contenu des sessions.",
                 Style::default().fg(DIM),
             )),
             rows[1],

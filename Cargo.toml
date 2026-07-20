@@ -5,7 +5,7 @@ members = ["crates/claudine-core", "crates/claudine"]
 [workspace.package]
 edition = "2024"
 rust-version = "1.85"
-version = "0.1.0"
+version = "0.1.1"
 license = "MIT OR Apache-2.0"
 description = "Outil Rust TUI/CLI pour naviguer et gérer les données locales de Claude Code (~/.claude)."
 repository = "https://github.com/systm-d/claudine"

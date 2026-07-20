@@ -13,10 +13,7 @@ use std::path::Path;
 use std::process::Command;
 
 use ratatui::crossterm::{
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-        KeyModifiers,
-    },
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -48,18 +45,17 @@ fn run_app(app: App) -> io::Result<()> {
 fn setup_terminal() -> io::Result<Tui> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    // Pas de capture souris : elle n'est pas exploitée et désactiverait la
+    // sélection/copie native du terminal (nécessaire pour copier un
+    // identifiant de session à la souris).
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     Terminal::new(backend)
 }
 
 fn restore_terminal(terminal: &mut Tui) -> io::Result<()> {
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
     Ok(())
 }
@@ -67,7 +63,7 @@ fn restore_terminal(terminal: &mut Tui) -> io::Result<()> {
 /// Restauration de bas niveau utilisée par le hook de panique (sans `Terminal`).
 fn restore_terminal_raw() {
     let _ = disable_raw_mode();
-    let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+    let _ = execute!(io::stdout(), LeaveAlternateScreen);
 }
 
 /// Installe un hook qui restaure le terminal avant de déléguer au handler par
@@ -100,6 +96,12 @@ fn event_loop(terminal: &mut Tui, mut app: App) -> io::Result<()> {
                 _ => {}
             }
         }
+        // Copie demandée (identifiant de session) : envoi vers le presse-papiers
+        // via la séquence OSC 52 (fonctionne aussi à travers SSH/tmux compatibles).
+        if let Some(text) = app.pending_clipboard.take() {
+            copy_to_clipboard_osc52(&text);
+        }
+
         // Édition externe demandée : suspend le TUI, lance l'éditeur, recharge.
         if let Some(path) = app.pending_edit.take() {
             edit_in_external_editor(terminal, &path)?;
@@ -109,15 +111,47 @@ fn event_loop(terminal: &mut Tui, mut app: App) -> io::Result<()> {
     Ok(())
 }
 
+/// Copie `text` dans le presse-papiers système via la séquence d'échappement
+/// OSC 52. Sans dépendance externe et compatible avec les terminaux distants.
+fn copy_to_clipboard_osc52(text: &str) {
+    use std::io::Write;
+    let encoded = base64_encode(text.as_bytes());
+    let seq = format!("\x1b]52;c;{encoded}\x07");
+    let mut out = io::stdout();
+    let _ = out.write_all(seq.as_bytes());
+    let _ = out.flush();
+}
+
+/// Encodage base64 standard (sans dépendance), suffisant pour OSC 52.
+fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
+        out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            ALPHABET[((n >> 6) & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[(n & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
 /// Suspend le TUI, ouvre `path` dans `$VISUAL`/`$EDITOR` (défaut `vi`), puis
 /// restaure le terminal.
 fn edit_in_external_editor(terminal: &mut Tui, path: &Path) -> io::Result<()> {
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -132,11 +166,7 @@ fn edit_in_external_editor(terminal: &mut Tui, path: &Path) -> io::Result<()> {
     }
 
     enable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        EnterAlternateScreen,
-        EnableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
     terminal.clear()?;
     Ok(())
 }
@@ -316,6 +346,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('E') => app.request_edit(),
         KeyCode::Char('h') | KeyCode::Char('H') => app.open_picker(),
         KeyCode::Char('/') => app.open_search(),
+        KeyCode::Char('y') => app.copy_selected_session_id(),
         KeyCode::Char('c') => app.open_trash(),
         // Section Config : enregistrer / basculer vers le JSON brut.
         KeyCode::Char('s') => app.save_settings(),
@@ -727,5 +758,31 @@ fn handle_mcp_editor_key(app: &mut App, key: KeyEvent) {
         Some(Deferred::Save) => app.mcp_save(),
         Some(Deferred::Cancel) => app.mcp_cancel(),
         None => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::base64_encode;
+
+    #[test]
+    fn base64_matches_known_vectors() {
+        // Vecteurs standard (RFC 4648), y compris le padding.
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn base64_encodes_session_uuid() {
+        let id = "11111111-1111-1111-1111-111111111111";
+        // Round-trip lisible : l'encodage ne perd rien (vérifié via longueur attendue).
+        let encoded = base64_encode(id.as_bytes());
+        assert_eq!(encoded.len(), id.len().div_ceil(3) * 4);
+        assert!(!encoded.contains(' '));
     }
 }

@@ -9,6 +9,23 @@ Versionnage : [Semantic Versioning](https://semver.org/lang/fr/)
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-20
+
+Corrigé :
+- Tri des sessions par date de création **décroissante** (les plus récentes en
+  tête) au lieu de l'ordre par identifiant.
+- Recherche : `Entrée` bascule désormais sur la recherche de **contenu** quand
+  le filtre chemin/id ne renvoie rien, au lieu de fermer la fenêtre (la
+  recherche paraissait ne « rien faire »).
+- Capture souris retirée du TUI : elle n'était pas exploitée et empêchait la
+  sélection/copie native du terminal.
+
+Ajouté :
+- `y` : copie l'**identifiant complet** de la session sélectionnée dans le
+  presse-papiers (séquence OSC 52, compatible SSH/tmux).
+- Affichage de l'identifiant complet de session dans l'en-tête du transcript
+  (sélectionnable/copiable).
+
 ## [0.1.0] - 2026-07-13
 
 ### Aligné sur le standard partagé (`rust-cli-template` + josephine)
@@ -86,6 +103,7 @@ Ajouté :
 
 ---
 
-[Unreleased]: https://github.com/systm-d/claudine/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/systm-d/claudine/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/systm-d/claudine/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/systm-d/claudine/releases/tag/v0.1.0
 [0.0.2]: https://github.com/systm-d/claudine/releases/tag/v0.0.2
