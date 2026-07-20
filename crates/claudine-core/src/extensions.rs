@@ -973,6 +973,23 @@ mod tests {
         perms.set_mode(0o555);
         std::fs::set_permissions(&plugins_dir, perms).unwrap();
 
+        // Sous root (p. ex. conteneurs CI Fedora), les bits de permission sont
+        // ignorés : impossible de provoquer la panne d'écriture par ce moyen. On
+        // sonde d'abord ; si l'écriture reste possible, le test n'est pas
+        // applicable ici — on restaure les perms et on sort.
+        let probe = plugins_dir.join(".probe_write");
+        if std::fs::write(&probe, b"x").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+            let mut perms = std::fs::metadata(&plugins_dir).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&plugins_dir, perms).unwrap();
+            eprintln!(
+                "ignoré : écriture possible malgré 0o555 (exécution en root ?), \
+                 panne d'écriture non reproductible"
+            );
+            return;
+        }
+
         let res = uninstall_plugin(&home, "foo", "m");
 
         // Restaure les permissions avant toute assertion (teardown-on-panic).
