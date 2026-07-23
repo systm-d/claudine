@@ -1,24 +1,24 @@
 +++
 [extra]
-tagline = "Gère tes données Claude Code, sans quitter le terminal."
-lede = "Sessions, mémoire, configuration, extensions et marketplaces — un TUI Rust qui lit et écrit ~/.claude en toute sûreté."
-cta = "Voir sur GitHub"
-cta2 = "Installer"
+tagline = "Manage your Claude Code data without leaving the terminal."
+lede = "Sessions, memory, configuration, extensions and marketplaces — a Rust TUI that reads and writes ~/.claude safely."
+cta = "View on GitHub"
+cta2 = "Install"
 +++
 
 <section class="preview">
-<h2>À quoi ça ressemble</h2>
-<p class="section-lede">Une interface entièrement au clavier, dans le terminal — deux écrans en exemple.</p>
+<h2>What it looks like</h2>
+<p class="section-lede">A fully keyboard-driven interface, right in your terminal — two example screens.</p>
 <div class="term-window">
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">claudine — ~/.claude</span></div>
 <div class="term-body">
 <div class="tui">
-<div class="tui-head"><span class="tui-brand">Claudine</span><span class="tabs"><span class="tab active">Projets</span><span class="tab">Mémoire</span><span class="tab">Config</span><span class="tab">Extensions</span></span><span class="tui-home">2 homes</span></div>
+<div class="tui-head"><span class="tui-brand">Claudine</span><span class="tabs"><span class="tab active">Projects</span><span class="tab">Memory</span><span class="tab">Config</span><span class="tab">Extensions</span></span><span class="tui-home">2 homes</span></div>
 <div class="tui-panels">
-<div class="tui-col"><div class="col-title">Projets</div><div class="row sel">▸ delfour.co/system</div><div class="row">levilainpetit.dev</div><div class="row">dotfiles</div><div class="row dim">+ 4 autres…</div></div>
-<div class="tui-col grow"><div class="col-title">Sessions</div><div class="row sel">▸ <span class="mark">refactor core</span> <span class="dim">a1b2c3d4 · 142 msg · 2026-07-22 17:24</span></div><div class="row">fix marketplaces install <span class="dim">7f3e0c11 · 88 msg · 2026-07-21 09:12</span></div><div class="row">logo TUI exact <span class="dim">2b9dd4a6 · 41 msg · 2026-07-19 18:44</span></div><div class="row">export bundle .tar.gz <span class="dim">c0771e9f · 63 msg · 2026-07-17 11:07</span></div></div>
+<div class="tui-col"><div class="col-title">Projects</div><div class="row sel">▸ delfour.co/system</div><div class="row">levilainpetit.dev</div><div class="row">dotfiles</div><div class="row dim">+ 4 more…</div></div>
+<div class="tui-col grow"><div class="col-title">Sessions</div><div class="row sel">▸ <span class="mark">refactor core</span> <span class="dim">a1b2c3d4 · 142 msgs · 2026-07-22 17:24</span></div><div class="row">fix marketplaces install <span class="dim">7f3e0c11 · 88 msgs · 2026-07-21 09:12</span></div><div class="row">exact TUI logo <span class="dim">2b9dd4a6 · 41 msgs · 2026-07-19 18:44</span></div><div class="row">export .tar.gz bundle <span class="dim">c0771e9f · 63 msgs · 2026-07-17 11:07</span></div></div>
 </div>
-<div class="tui-foot"><span class="key">/</span> rechercher<span class="key">m</span> déplacer<span class="key">c</span> corbeille<span class="key">?</span> aide</div>
+<div class="tui-foot"><span class="key">/</span> search<span class="key">m</span> move<span class="key">c</span> trash<span class="key">?</span> help</div>
 </div>
 </div>
 </div>
@@ -26,45 +26,45 @@ cta2 = "Installer"
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">claudine — extensions</span></div>
 <div class="term-body">
 <div class="tui">
-<div class="tui-head"><span class="tui-brand">Claudine</span><span class="tabs"><span class="tab">Projets</span><span class="tab">Mémoire</span><span class="tab">Config</span><span class="tab active">Extensions</span></span></div>
+<div class="tui-head"><span class="tui-brand">Claudine</span><span class="tabs"><span class="tab">Projects</span><span class="tab">Memory</span><span class="tab">Config</span><span class="tab active">Extensions</span></span></div>
 <div class="tui-panels">
 <div class="tui-col grow"><div class="col-title">Hooks · 3</div><div class="row"><span class="ev">PreToolUse</span> bash → <span class="dim">./guard.sh</span></div><div class="row"><span class="ev">PostToolUse</span> edit → <span class="dim">prettier --write</span></div><div class="col-title" style="margin-top:.7rem">Plugins · 5</div><div class="row"><span class="on">✓</span> superpowers <span class="dim">@official</span></div><div class="row"><span class="on">✓</span> rtk-tools <span class="dim">@systm-d</span></div><div class="row"><span class="off">○</span> notion-mcp <span class="dim">@community</span></div></div>
-<div class="tui-col"><div class="col-title">Serveurs MCP · 2</div><div class="row"><span class="mark">●</span> github <span class="dim">stdio</span></div><div class="row"><span class="mark">●</span> filesystem <span class="dim">stdio</span></div></div>
+<div class="tui-col"><div class="col-title">MCP servers · 2</div><div class="row"><span class="mark">●</span> github <span class="dim">stdio</span></div><div class="row"><span class="mark">●</span> filesystem <span class="dim">stdio</span></div></div>
 </div>
-<div class="tui-foot"><span class="key">e</span> éditer<span class="key">p</span> activer / désactiver<span class="key">M</span> marketplaces</div>
+<div class="tui-foot"><span class="key">e</span> edit<span class="key">p</span> enable / disable<span class="key">M</span> marketplaces</div>
 </div>
 </div>
 </div>
 </section>
 
 <section class="features">
-<h2>Ce que fait Claudine</h2>
+<h2>What Claudine does</h2>
 <div class="grid">
-<div class="card"><h3>Sessions nommées</h3><p>La liste affiche le titre de la session, pas l'UUID — déplace et restaure sur toutes tes homes.</p></div>
-<div class="card"><h3>Recherche live</h3><p>Filtre nom / chemin / id à la frappe, puis cherche dans le contenu dès 3 caractères — extraits centrés sur le terme.</p></div>
-<div class="card"><h3>Transcript lisible</h3><p>La conversation sans le bruit interne ; appels d'outils et résultats résumés ; horodatages condensés.</p></div>
-<div class="card"><h3>Mémoire</h3><p>Consulte la mémoire utilisateur (CLAUDE.md) directement dans le terminal.</p></div>
-<div class="card"><h3>Configuration</h3><p>Édite settings.json avec écriture atomique et sauvegarde horodatée.</p></div>
-<div class="card"><h3>Extensions</h3><p>Hooks, serveurs MCP et plugins : lecture, édition, activation.</p></div>
-<div class="card"><h3>Marketplaces</h3><p>Ajoute des marketplaces et installe des plugins depuis le catalogue.</p></div>
-<div class="card"><h3>Import / Export</h3><p>Bundles .tar.gz signés, remap de chemins, dry-run, exclusion des secrets.</p></div>
+<div class="card"><h3>Named sessions</h3><p>The list shows the session title, not the UUID — move and restore across all your homes.</p></div>
+<div class="card"><h3>Live search</h3><p>Filter by name / path / id as you type, then search inside content from 3 characters — snippets centered on the match.</p></div>
+<div class="card"><h3>Readable transcript</h3><p>The conversation without the internal noise; tool calls and results summarized; condensed timestamps.</p></div>
+<div class="card"><h3>Memory</h3><p>Read the user memory (CLAUDE.md) right in the terminal.</p></div>
+<div class="card"><h3>Configuration</h3><p>Edit settings.json with atomic writes and timestamped backups.</p></div>
+<div class="card"><h3>Extensions</h3><p>Hooks, MCP servers and plugins: read, edit, enable.</p></div>
+<div class="card"><h3>Marketplaces</h3><p>Add marketplaces and install plugins from the catalog.</p></div>
+<div class="card"><h3>Import / Export</h3><p>Signed .tar.gz bundles, path remapping, dry-run, secret exclusion.</p></div>
 </div>
 </section>
 
 <section id="usage" class="usage">
-<h2>Commandes</h2>
-<p class="section-lede">L'invocation nue lance la TUI ; les sous-commandes rendent tout scriptable.</p>
+<h2>Commands</h2>
+<p class="section-lede">Running it bare launches the TUI; subcommands make everything scriptable.</p>
 <div class="term-window">
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">bash</span></div>
 <div class="term-body cmds">
 <div class="line"><span class="prompt">$</span>claudine</div>
-<div class="out">→ ouvre l'interface TUI interactive</div>
+<div class="out">→ opens the interactive TUI</div>
 <div class="line"><span class="prompt">$</span>claudine homes add <span class="arg">~/.claude-perso</span></div>
-<div class="out">Home enregistrée : ~/.claude-perso</div>
+<div class="out">Home registered: ~/.claude-perso</div>
 <div class="line"><span class="prompt">$</span>claudine export <span class="flag">--out</span> backup.tar.gz</div>
-<div class="out">Rapport : sessions 128 · projets 12 — Bundle écrit</div>
+<div class="out">Report: 128 sessions · 12 projects — Bundle written</div>
 <div class="line"><span class="prompt">$</span>claudine import backup.tar.gz <span class="flag">--map</span> /old=/new <span class="flag">--dry-run</span></div>
-<div class="out">(dry-run : rien n'a été écrit)</div>
+<div class="out">(dry-run: nothing was written)</div>
 </div>
 </div>
 </section>
@@ -74,7 +74,7 @@ cta2 = "Installer"
 <div class="term-window">
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">install</span></div>
 <div class="term-body cmds">
-<div class="comment"># Depuis les sources — toutes plateformes</div>
+<div class="comment"># From source — all platforms</div>
 <div class="line"><span class="prompt">$</span>cargo install <span class="flag">--git</span> https://github.com/systm-d/claudine claudine</div>
 <div class="comment"># Debian / Ubuntu</div>
 <div class="line"><span class="prompt">$</span>sudo dpkg -i claudine_*_amd64.deb</div>
