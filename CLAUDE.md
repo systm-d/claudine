@@ -33,6 +33,7 @@ marketplaces). Rust workspace: `claudine-core` (library: pure logic plus
 | Import bundle / path remap | `crates/claudine-core/src/import.rs`, `remap.rs` |
 | Trash / housekeeping | `crates/claudine-core/src/housekeeping.rs` |
 | Search across sessions | `crates/claudine-core/src/search.rs` |
+| Usage stats / cost estimate / activity heatmap | `crates/claudine-core/src/usage.rs` |
 | Session/project scan & model | `crates/claudine-core/src/scan.rs`, `model.rs` |
 | Export manifest format | `crates/claudine-core/src/manifest.rs` |
 | Encoded-path codec | `crates/claudine-core/src/pathcodec.rs` |

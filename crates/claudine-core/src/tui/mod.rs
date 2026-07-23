@@ -320,6 +320,15 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Pop-up des stats d'usage d'une session (lecture seule).
+    if app.session_usage.is_some() {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('u') | KeyCode::Char('q') => app.close_session_usage(),
+            _ => {}
+        }
+        return;
+    }
+
     // L'overlay d'aide capture l'essentiel des touches.
     if app.show_help {
         match key.code {
@@ -347,6 +356,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('h') | KeyCode::Char('H') => app.open_picker(),
         KeyCode::Char('/') => app.open_search(),
         KeyCode::Char('y') => app.copy_selected_session_id(),
+        KeyCode::Char('u') => app.open_session_usage(),
         KeyCode::Char('c') => app.open_trash(),
         // Transcript : afficher/masquer les entrées internes (métadonnées).
         KeyCode::Char('a') => app.toggle_transcript_detail(),
@@ -361,6 +371,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('2') => app.set_section(Section::Memory),
         KeyCode::Char('3') => app.set_section(Section::Config),
         KeyCode::Char('4') => app.set_section(Section::Extensions),
+        KeyCode::Char('5') => app.set_section(Section::Usage),
         KeyCode::Tab => app.next_section(),
         // Shift-Tab bascule le focus entre panneaux dans Browse.
         KeyCode::BackTab => app.toggle_focus(),

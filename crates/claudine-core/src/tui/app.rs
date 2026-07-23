@@ -11,9 +11,9 @@ use crate::{
     decode_encoded_to_path, discover_homes, dry_run as import_dry_run, empty_trash, export,
     find_in_session, install_plugin, list_trash, move_session, purge_trash_item, read_extensions,
     read_hook_groups, read_installed_plugins, read_marketplace_manifest, read_marketplaces,
-    read_user_mcp_servers, remove_marketplace, restore_trash_entry, scan_projects,
-    set_plugin_enabled, trash_project, trash_session, uninstall_plugin, update_marketplace,
-    write_hooks, write_user_mcp_servers,
+    read_session_usage, read_user_mcp_servers, remove_marketplace, restore_trash_entry,
+    scan_projects, set_plugin_enabled, trash_project, trash_session, uninstall_plugin,
+    update_marketplace, usage::Usage, write_hooks, write_user_mcp_servers,
 };
 use serde_json::Value;
 
@@ -45,13 +45,14 @@ pub enum MktJobKind {
     InstallPlugin { plugin: String },
 }
 
-/// Sections de premier niveau, sélectionnables avec Tab / 1,2,3,4.
+/// Sections de premier niveau, sélectionnables avec Tab / 1,2,3,4,5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
     Browse,
     Memory,
     Config,
     Extensions,
+    Usage,
 }
 
 impl Section {
@@ -61,6 +62,7 @@ impl Section {
             Section::Memory => "Mémoire",
             Section::Config => "Config",
             Section::Extensions => "Extensions",
+            Section::Usage => "Usage",
         }
     }
 
@@ -70,6 +72,7 @@ impl Section {
             Section::Memory => 1,
             Section::Config => 2,
             Section::Extensions => 3,
+            Section::Usage => 4,
         }
     }
 
@@ -78,7 +81,8 @@ impl Section {
             Section::Browse => Section::Memory,
             Section::Memory => Section::Config,
             Section::Config => Section::Extensions,
-            Section::Extensions => Section::Browse,
+            Section::Extensions => Section::Usage,
+            Section::Usage => Section::Browse,
         }
     }
 }
@@ -110,6 +114,13 @@ pub struct TranscriptEntry {
     /// `mode`, `file-history-snapshot`, `attachment`, `ai-title`, …). Masquées
     /// par défaut à l'affichage, révélables via la bascule « détails ».
     pub noise: bool,
+}
+
+/// Stats d'usage d'une seule session, affichées en pop-up (touche `u`).
+pub struct SessionUsageView {
+    /// Libellé d'en-tête : `<titre/id> · <projet>`.
+    pub label: String,
+    pub usage: Usage,
 }
 
 /// Une cible de déplacement de session : un projet (cwd) dans un home donné.
@@ -306,6 +317,16 @@ pub struct App {
     /// Nombre de lignes rendues dans la section Extensions (pour le clamp Fin).
     pub ext_total: usize,
 
+    // --- Usage (statistiques agrégées, calculées depuis les sessions chargées) ---
+    /// Usage agrégé sur le périmètre courant (home actif, ou tous en agrégé).
+    pub usage: Usage,
+    pub usage_scroll: usize,
+    pub usage_viewport: usize,
+    /// Nombre de lignes rendues dans la section Usage (pour le clamp Fin).
+    pub usage_total: usize,
+    /// Pop-up des stats de la session sélectionnée ; `None` = fermé.
+    pub session_usage: Option<SessionUsageView>,
+
     // --- Formulaire de réglages (édite le settings.json de la home active) ---
     pub settings: SettingsForm,
 }
@@ -350,6 +371,7 @@ impl App {
         let config_lines = build_config_lines(home);
         let extensions = read_extensions(home);
         let settings = SettingsForm::load(home);
+        let usage = aggregate_usage(&projects);
         App {
             homes,
             active: 0,
@@ -396,6 +418,11 @@ impl App {
             ext_scroll: 0,
             ext_viewport: 1,
             ext_total: 0,
+            usage,
+            usage_scroll: 0,
+            usage_viewport: 1,
+            usage_total: 0,
+            session_usage: None,
             settings,
         }
     }
@@ -445,6 +472,36 @@ impl App {
                 self.status = Some("Aucune session sélectionnée à copier".to_string());
             }
         }
+    }
+
+    // --- Statistiques d'usage (pop-up par session) ---
+
+    /// Ouvre le pop-up d'usage de la session sélectionnée (touche `u` en Browse).
+    /// Sans effet hors de la section Projets ou sans session sélectionnée.
+    pub fn open_session_usage(&mut self) {
+        if self.section != Section::Browse {
+            return;
+        }
+        let (label, path) = match (self.selected_project(), self.selected_session()) {
+            (Some(p), Some(s)) => {
+                let proj = humanize_path(&p.cwd.clone().unwrap_or_else(|| p.encoded_name.clone()));
+                (format!("{} · {proj}", s.display_label()), s.path.clone())
+            }
+            _ => {
+                self.status = Some("Aucune session sélectionnée".to_string());
+                return;
+            }
+        };
+        let usage = read_session_usage(&path);
+        if usage.is_empty() {
+            self.status = Some("Aucune donnée d'usage pour cette session".to_string());
+            return;
+        }
+        self.session_usage = Some(SessionUsageView { label, usage });
+    }
+
+    pub fn close_session_usage(&mut self) {
+        self.session_usage = None;
     }
 
     // --- Navigation globale ---
@@ -622,6 +679,7 @@ impl App {
                 }
             }
             Section::Extensions => self.ext_scroll = scroll_add(self.ext_scroll, 1),
+            Section::Usage => self.usage_scroll = scroll_add(self.usage_scroll, 1),
         }
     }
 
@@ -640,6 +698,7 @@ impl App {
                 }
             }
             Section::Extensions => self.ext_scroll = self.ext_scroll.saturating_sub(1),
+            Section::Usage => self.usage_scroll = self.usage_scroll.saturating_sub(1),
         }
     }
 
@@ -799,6 +858,9 @@ impl App {
             Section::Extensions => {
                 self.ext_scroll = page(self.ext_scroll, self.ext_viewport, true);
             }
+            Section::Usage => {
+                self.usage_scroll = page(self.usage_scroll, self.usage_viewport, true);
+            }
             _ => {}
         }
     }
@@ -823,6 +885,9 @@ impl App {
             Section::Extensions => {
                 self.ext_scroll = page(self.ext_scroll, self.ext_viewport, false);
             }
+            Section::Usage => {
+                self.usage_scroll = page(self.usage_scroll, self.usage_viewport, false);
+            }
             _ => {}
         }
     }
@@ -842,6 +907,7 @@ impl App {
                 }
             }
             Section::Extensions => self.ext_scroll = 0,
+            Section::Usage => self.usage_scroll = 0,
             _ => {}
         }
     }
@@ -865,6 +931,9 @@ impl App {
             }
             Section::Extensions => {
                 self.ext_scroll = self.ext_total.saturating_sub(self.ext_viewport);
+            }
+            Section::Usage => {
+                self.usage_scroll = self.usage_total.saturating_sub(self.usage_viewport);
             }
             _ => {}
         }
@@ -951,7 +1020,7 @@ impl App {
             Section::Memory => Some(home.memory_file()),
             // Hooks et plugins activés vivent dans settings.json.
             Section::Config | Section::Extensions => Some(home.settings_file()),
-            Section::Browse => None,
+            Section::Browse | Section::Usage => None,
         };
     }
 
@@ -1542,9 +1611,11 @@ impl App {
                 }
             }
         }
+        self.usage = aggregate_usage(&projects);
         self.projects = projects;
         self.project_homes = project_homes;
         self.project_home_bases = project_home_bases;
+        self.usage_scroll = 0;
     }
 
     /// Borne les index de Browse après un rechargement (ex. suppression).
@@ -2499,6 +2570,19 @@ fn latest_export_bundle(dir: &Path) -> Option<PathBuf> {
     best.map(|(_, p)| p)
 }
 
+/// Agrège l'usage (tokens, coût, activité par jour) de toutes les sessions des
+/// projets chargés. Relit chaque `.jsonl` pour en extraire les compteurs
+/// `message.usage` ignorés par le scan de métadonnées.
+fn aggregate_usage(projects: &[Project]) -> Usage {
+    let mut usage = Usage::default();
+    for p in projects {
+        for s in &p.sessions {
+            usage.merge(&read_session_usage(&s.path));
+        }
+    }
+    usage
+}
+
 /// Formate une taille en octets de façon lisible (Kio/Mio).
 pub fn human_size(bytes: u64) -> String {
     const KIB: f64 = 1024.0;
@@ -2548,7 +2632,59 @@ mod tests {
         app.next_section();
         assert_eq!(app.section, Section::Extensions);
         app.next_section();
+        assert_eq!(app.section, Section::Usage);
+        app.next_section();
         assert_eq!(app.section, Section::Browse);
+    }
+
+    /// Écrit une session `.jsonl` avec une ligne assistant portant de l'usage.
+    fn write_session(home: &ClaudeHome, encoded: &str, id: &str, model: &str, ts: &str) {
+        let dir = home.projects_dir().join(encoded);
+        fs::create_dir_all(&dir).unwrap();
+        let line = format!(
+            r#"{{"type":"assistant","timestamp":"{ts}","cwd":"/proj","message":{{"id":"{id}","model":"{model}","usage":{{"input_tokens":10,"output_tokens":100,"cache_creation_input_tokens":50,"cache_read_input_tokens":200}}}}}}"#,
+        );
+        fs::write(dir.join(format!("{id}.jsonl")), line).unwrap();
+    }
+
+    #[test]
+    fn usage_aggregated_at_load() {
+        let (_d, home) = temp_home();
+        write_session(
+            &home,
+            "-proj",
+            "11111111-1111-1111-1111-111111111111",
+            "claude-opus-4-8",
+            "2026-07-20T10:00:00Z",
+        );
+        let app = App::with_homes(vec![home]);
+        assert!(!app.usage.is_empty());
+        assert_eq!(app.usage.assistant_messages(), 1);
+        assert_eq!(app.usage.totals().output, 100);
+        // Opus 4.8 est tarifé → coût strictement positif.
+        assert!(app.usage.total_cost() > 0.0);
+        assert!(!app.usage.has_unpriced());
+    }
+
+    #[test]
+    fn session_usage_popup_opens_and_closes() {
+        let (_d, home) = temp_home();
+        write_session(
+            &home,
+            "-proj",
+            "22222222-2222-2222-2222-222222222222",
+            "claude-sonnet-5",
+            "2026-07-21T09:00:00Z",
+        );
+        let mut app = App::with_homes(vec![home]);
+        app.set_section(Section::Browse);
+        app.focus = Focus::Sessions;
+        app.open_session_usage();
+        assert!(app.session_usage.is_some());
+        let view = app.session_usage.as_ref().unwrap();
+        assert_eq!(view.usage.assistant_messages(), 1);
+        app.close_session_usage();
+        assert!(app.session_usage.is_none());
     }
 
     #[test]

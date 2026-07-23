@@ -1,9 +1,9 @@
 # Claudine
 
 ```
-╭─────────────────────────────────────────────────────────╮
-│  claudine  │ 1 Projets │ 2 Mémoire │ 3 Config │ 4 Extensions │
-╰─────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────╮
+│  claudine  │ 1 Projets │ 2 Mémoire │ 3 Config │ 4 Extensions │ 5 Usage │
+╰───────────────────────────────────────────────────────────────────╯
 ```
 
 **Claudine** est un outil Rust TUI/CLI pour naviguer et gérer les données locales
@@ -22,8 +22,8 @@ et extensions (hooks, plugins, serveurs MCP).
 
 ## Fonctionnalités
 
-- **TUI interactif** — quatre onglets (Projets, Mémoire, Config, Extensions) ;
-  navigation clavier complète.
+- **TUI interactif** — cinq onglets (Projets, Mémoire, Config, Extensions,
+  Usage) ; navigation clavier complète.
 - **CLI** — sous-commandes `export`, `import`, `homes` pour les scripts et la
   CI.
 - **Multi-home** — plusieurs installations Claude côte à côte (`~/.claude`,
@@ -46,6 +46,12 @@ et extensions (hooks, plugins, serveurs MCP).
   chemins à l'import ; exclusion automatique des secrets.
 - **Extensions** — lecture des hooks, plugins et serveurs MCP ; édition des
   hooks, bascule des plugins directement dans le TUI.
+- **Statistiques d'usage** — onglet « Usage » (`5`) : tokens consommés
+  (entrée / sortie / cache), estimation de coût par famille de modèle et grille
+  d'activité quotidienne façon GitHub (aux couleurs de l'interface). `u` sur une
+  session affiche sa décomposition détaillée. L'estimation de coût s'appuie sur
+  une table de tarifs Anthropic ; les modèles inconnus sont comptés en tokens
+  mais exclus du coût (signalés par `*`).
 
 ---
 
@@ -158,7 +164,7 @@ claudine
 
 | Touche             | Action                                                     |
 |--------------------|-------------------------------------------------------------|
-| `1` / `2` / `3` / `4` | Projets / Mémoire / Config / Extensions               |
+| `1` … `5`          | Projets / Mémoire / Config / Extensions / Usage            |
 | `Tab`              | Section suivante                                            |
 | `↑ ↓` / `j k`     | Naviguer / défiler                                          |
 | `← →`             | Changer de panneau (vue Browse)                             |
@@ -170,6 +176,7 @@ claudine
 | `d` / `Suppr`      | Envoyer en corbeille : session (Projets) ou projet (Projets)|
 | `m`                | Déplacer la session vers un autre projet                    |
 | `c`                | Corbeille : restaurer / supprimer définitivement / vider    |
+| `u`                | Stats d'usage de la session sélectionnée (onglet Projets)   |
 | `Esc`              | Retour (transcript) ou quitter                              |
 | `PgUp` / `PgDn`    | Défilement par page                                         |
 | `Home` / `End`     | Aller au début / à la fin                                   |

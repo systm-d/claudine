@@ -14,6 +14,7 @@ use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
 use crate::tui::marketplaces::MktMode;
 use crate::tui::marketplaces::PluginCatalog;
 use crate::tui::mcp_editor::{McpEdit, McpLevel, McpRow};
+use crate::usage::{Date, Heatmap, Usage, fmt_tokens, fmt_usd};
 use crate::{MarketplaceSource, McpTransport, scan_projects};
 
 // Palette alignée sur la landing page (site/sass/main.scss) : accent terracotta
@@ -30,6 +31,16 @@ const DANGER: Color = Color::Rgb(0xc8, 0x70, 0x5c); // rouge chaud (point rouge)
 const SEL_FG: Color = Color::Rgb(0x1a, 0x12, 0x0d); // texte sur fond accent
 const BAR: Color = Color::Rgb(0x2b, 0x24, 0x1e); // --bar (fond des puces)
 const CHEEK: Color = Color::Rgb(0xd9, 0x53, 0x4f); // pommettes de la mascotte
+
+// Rampe d'intensité de la grille d'activité (façon GitHub, mais dans les tons
+// terracotta de l'interface) : du plus sombre (peu d'activité) à l'accent Claude.
+const HEAT: [Color; 5] = [
+    BAR,                          // niveau 0 : aucune activité
+    Color::Rgb(0x5c, 0x39, 0x2c), // 1
+    Color::Rgb(0x8f, 0x50, 0x3a), // 2
+    Color::Rgb(0xba, 0x64, 0x49), // 3
+    ACCENT,                       // 4 : jour le plus chargé
+];
 
 /// Point d'entrée du rendu : un cadre complet.
 pub fn render(app: &mut App, f: &mut Frame) {
@@ -65,6 +76,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
         }
         Section::Config => render_config(app, f, chunks[1]),
         Section::Extensions => render_extensions(app, f, chunks[1]),
+        Section::Usage => render_usage(app, f, chunks[1]),
     }
 
     render_status(app, f, chunks[2]);
@@ -100,6 +112,10 @@ pub fn render(app: &mut App, f: &mut Frame) {
     }
     if app.marketplaces.is_some() {
         render_marketplaces(app, f, area);
+    }
+
+    if app.session_usage.is_some() {
+        render_session_usage(app, f, area);
     }
 
     if app.show_picker {
@@ -166,6 +182,7 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
         Section::Memory,
         Section::Config,
         Section::Extensions,
+        Section::Usage,
     ]
     .iter()
     .map(|s| Line::from(format!(" {} ", s.title())))
@@ -602,6 +619,305 @@ fn render_extensions(app: &mut App, f: &mut Frame, area: Rect) {
     f.render_widget(para, inner);
 }
 
+/// Section Usage : statistiques agrégées (tokens, coût estimé), tableau par
+/// modèle et grille d'activité quotidienne (façon GitHub, tons de l'interface).
+fn render_usage(app: &mut App, f: &mut Frame, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            format!(" Usage · {} ", app.active_label()),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(" u détail d'une session (Projets) ").right_aligned());
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if app.usage.is_empty() {
+        let msg = Text::from(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Aucune donnée d'usage.",
+                Style::default().fg(DIM).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Les sessions Claude Code enregistrent les tokens consommés dans leurs .jsonl.",
+                Style::default().fg(DIM),
+            )),
+        ]);
+        let vchunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(35), Constraint::Min(1)])
+            .split(inner);
+        f.render_widget(Paragraph::new(msg).alignment(Alignment::Center), vchunks[1]);
+        return;
+    }
+
+    let sessions = app.projects.iter().map(|p| p.sessions.len()).sum();
+    let lines = usage_lines(&app.usage, sessions);
+    app.usage_total = lines.len();
+
+    // Réserve la grille d'activité en bas quand la hauteur le permet.
+    const HEAT_H: u16 = 10;
+    let (top, heat) = if inner.height > HEAT_H + 3 {
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(HEAT_H)])
+            .split(inner);
+        (rows[0], Some(rows[1]))
+    } else {
+        (inner, None)
+    };
+
+    app.usage_viewport = top.height as usize;
+    app.usage_scroll = app
+        .usage_scroll
+        .min(lines.len().saturating_sub(top.height as usize));
+    let para = Paragraph::new(Text::from(lines)).scroll((app.usage_scroll as u16, 0));
+    f.render_widget(para, top);
+
+    if let Some(heat) = heat {
+        render_heatmap(&app.usage, f, heat);
+    }
+}
+
+/// Tuiles récapitulatives + détail des tokens + tableau par modèle.
+fn usage_lines(u: &Usage, sessions: usize) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line> = Vec::new();
+    let t = u.totals();
+    let star = if u.has_unpriced() { " *" } else { "" };
+    let rows = u.model_rows();
+
+    // Ligne de tuiles : libellé discret + valeur en accent.
+    let mut tiles: Vec<Span> = Vec::new();
+    let mut tile = |label: &str, val: String| {
+        tiles.push(Span::styled(
+            format!("  {label} "),
+            Style::default().fg(DIM),
+        ));
+        tiles.push(Span::styled(
+            val,
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+    };
+    tile("Total", format!("{} tok", fmt_tokens(t.total())));
+    tile("Coût est.", format!("~{}{star}", fmt_usd(u.total_cost())));
+    tile("Modèles", rows.len().to_string());
+    tile("Sessions", sessions.to_string());
+    tile("Messages", u.assistant_messages().to_string());
+    lines.push(Line::from(tiles));
+
+    lines.push(Line::from(Span::styled(
+        format!(
+            "  Entrée {} · Sortie {} · Cache écrit {} · Cache lu {}",
+            fmt_tokens(t.input),
+            fmt_tokens(t.output),
+            fmt_tokens(t.cache_creation),
+            fmt_tokens(t.cache_read),
+        ),
+        Style::default().fg(MUTED),
+    )));
+    if let Some((a, b)) = u.date_span() {
+        lines.push(Line::from(Span::styled(
+            format!("  Période : {a} → {b}"),
+            Style::default().fg(DIM),
+        )));
+    }
+    if u.has_unpriced() {
+        lines.push(Line::from(Span::styled(
+            "  * certains modèles n'ont pas de tarif connu : coût partiel",
+            Style::default().fg(WARN),
+        )));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "── Par modèle ──",
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    )));
+
+    let grand = t.total().max(1);
+    for r in &rows {
+        let filled = ((r.tokens.total() as f64 / grand as f64) * 10.0).round() as usize;
+        let filled = filled.min(10);
+        let bar: String = "█".repeat(filled) + &"·".repeat(10 - filled);
+        let cost = match r.cost {
+            Some(c) => format!("~{}", fmt_usd(c)),
+            None => "—".to_string(),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {:<26} ", truncate_right(&r.model, 26)),
+                Style::default().fg(FG),
+            ),
+            Span::styled(
+                format!("{:>9} tok  ", fmt_tokens(r.tokens.total())),
+                Style::default().fg(MUTED),
+            ),
+            Span::styled(format!("{:>4} msg  ", r.messages), Style::default().fg(DIM)),
+            Span::styled(format!("{cost:>10}  "), Style::default().fg(OK)),
+            Span::styled(bar, Style::default().fg(ACCENT)),
+        ]));
+    }
+    lines
+}
+
+/// Ancre de la grille d'activité : aujourd'hui (horloge système), ou le dernier
+/// jour d'activité s'il est postérieur (contexte figé / horloge décalée).
+fn anchor_date(u: &Usage) -> Date {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let today = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| Date::from_days((d.as_secs() / 86_400) as i64));
+    let last = u.date_span().and_then(|(_, b)| Date::parse(&b));
+    match (today, last) {
+        (Some(t), Some(l)) => {
+            if l.days() > t.days() {
+                l
+            } else {
+                t
+            }
+        }
+        (Some(t), None) => t,
+        (None, Some(l)) => l,
+        (None, None) => Date::from_days(0),
+    }
+}
+
+/// Ligne des libellés de mois au-dessus des colonnes (une colonne = 2 cellules).
+fn month_label_line(hm: &Heatmap, label_w: usize) -> Line<'static> {
+    let mut buf = vec![' '; label_w + hm.weeks.len() * 2];
+    let mut last_month = 0u32;
+    // Fin (exclusive) du dernier libellé posé : évite les chevauchements de mois
+    // trop rapprochés en tête de grille (colonnes partielles).
+    let mut last_end = 0usize;
+    for (i, col) in hm.weeks.iter().enumerate() {
+        let Some(date) = Date::parse(&col[0].date) else {
+            continue;
+        };
+        let (_, m, _) = date.ymd();
+        if m != last_month {
+            last_month = m;
+            let start = label_w + i * 2;
+            if start < last_end {
+                continue; // chevaucherait le libellé précédent → on saute.
+            }
+            let name = date.month_short();
+            for (k, ch) in name.chars().enumerate() {
+                if let Some(slot) = buf.get_mut(start + k) {
+                    *slot = ch;
+                }
+            }
+            last_end = start + name.chars().count() + 1;
+        }
+    }
+    Line::from(Span::styled(
+        buf.into_iter().collect::<String>(),
+        Style::default().fg(DIM),
+    ))
+}
+
+/// Grille d'activité quotidienne façon GitHub : colonnes = semaines (dimanche en
+/// tête), lignes = jours, intensité par teinte terracotta.
+fn render_heatmap(u: &Usage, f: &mut Frame, area: Rect) {
+    const LABEL_W: u16 = 4;
+    let usable = area.width.saturating_sub(LABEL_W);
+    let weeks = ((usable / 2) as usize).clamp(1, 53);
+    let hm = u.heatmap(anchor_date(u), weeks);
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(month_label_line(&hm, LABEL_W as usize));
+
+    const DOW: [&str; 7] = ["", "Lun", "", "Mer", "", "Ven", ""];
+    for (row, name) in DOW.iter().enumerate() {
+        let mut spans = vec![Span::styled(
+            format!("{name:<width$}", width = LABEL_W as usize),
+            Style::default().fg(DIM),
+        )];
+        for col in &hm.weeks {
+            let cell = &col[row];
+            if cell.in_range {
+                spans.push(Span::styled(
+                    "  ",
+                    Style::default().bg(HEAT[cell.level as usize]),
+                ));
+            } else {
+                spans.push(Span::raw("  "));
+            }
+        }
+        lines.push(Line::from(spans));
+    }
+
+    // Légende : « Moins ▁▂▃▄ Plus ».
+    let mut leg = vec![Span::styled(
+        format!("{:<width$}Moins ", "", width = LABEL_W as usize),
+        Style::default().fg(DIM),
+    )];
+    for c in HEAT {
+        leg.push(Span::styled(" ", Style::default().bg(c)));
+    }
+    leg.push(Span::styled(" Plus", Style::default().fg(DIM)));
+    lines.push(Line::from(leg));
+
+    f.render_widget(Paragraph::new(Text::from(lines)), area);
+}
+
+/// Pop-up des statistiques d'usage d'une seule session (touche `u` en Browse).
+fn render_session_usage(app: &App, f: &mut Frame, area: Rect) {
+    let Some(v) = &app.session_usage else {
+        return;
+    };
+    let popup = centered_rect(78, 68, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled(
+            " Usage de la session ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .title(Line::from(" Esc / u fermer ").right_aligned());
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        format!(
+            "  {}",
+            truncate_right(&v.label, (inner.width as usize).saturating_sub(2))
+        ),
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(""));
+    lines.extend(usage_lines(&v.usage, 1));
+
+    // Activité par jour : utile pour une session (souvent un ou deux jours).
+    let days = v.usage.daily_rows();
+    if !days.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "── Par jour ──",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )));
+        let dmax = days.iter().map(|(_, n)| *n).max().unwrap_or(1).max(1);
+        for (d, n) in days.iter().take(12) {
+            let w = ((*n as f64 / dmax as f64) * 24.0).round() as usize;
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {d}  "), Style::default().fg(DIM)),
+                Span::styled("█".repeat(w.max(1)), Style::default().fg(ACCENT)),
+                Span::styled(format!("  {}", fmt_tokens(*n)), Style::default().fg(MUTED)),
+            ]));
+        }
+        if days.len() > 12 {
+            lines.push(Line::from(Span::styled(
+                format!("  … +{} jour(s)", days.len() - 12),
+                Style::default().fg(DIM),
+            )));
+        }
+    }
+
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
 /// Section Config : formulaire éditable, ou JSON brut (bascule `r`).
 fn render_config(app: &mut App, f: &mut Frame, area: Rect) {
     if app.settings.raw() {
@@ -901,6 +1217,15 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
         return;
     }
 
+    // Pop-up d'usage session : raccourci prioritaire.
+    if app.session_usage.is_some() {
+        f.render_widget(
+            Paragraph::new(Line::from(key_hints(&[("Esc / u", "fermer")]))),
+            area,
+        );
+        return;
+    }
+
     let hints: Vec<Span> = match app.section {
         Section::Browse if app.browse_view == BrowseView::Transcript => key_hints(&[
             ("↑/↓", "défiler"),
@@ -980,6 +1305,14 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("E", "settings"),
             ("?", "aide"),
         ]),
+        Section::Usage => key_hints(&[
+            ("Tab/1·2·3·4·5", "sections"),
+            ("↑/↓ PgUp/Dn", "défiler"),
+            ("u", "détail (Projets)"),
+            ("h", "homes"),
+            ("?", "aide"),
+            ("q", "quitter"),
+        ]),
         _ => key_hints(&[
             ("Tab/1·2·3·4", "sections"),
             ("↑/↓ PgUp/Dn", "défiler"),
@@ -1001,8 +1334,19 @@ fn render_help(f: &mut Frame, area: Rect) {
         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
     ));
     let rows = [
-        ("1 / 2 / 3 / 4", "Projets / Mémoire / Config / Extensions"),
+        (
+            "1 / 2 / 3 / 4 / 5",
+            "Projets / Mémoire / Config / Extensions / Usage",
+        ),
         ("Tab", "section suivante"),
+        (
+            "Usage",
+            "tokens, coût estimé, activité par jour (agrégé sur le périmètre)",
+        ),
+        (
+            "u",
+            "stats d'usage de la session sélectionnée (dans Projets)",
+        ),
         (
             "Extensions",
             "hooks (Enter) · plugins (p) · MCP (m) · marketplaces (g → Enter: catalogue, i installe) ; E édite settings.json",
