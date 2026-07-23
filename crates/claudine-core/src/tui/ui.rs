@@ -29,6 +29,7 @@ const WARN: Color = Color::Rgb(0xc9, 0xa3, 0x5a); // ambre (point jaune)
 const DANGER: Color = Color::Rgb(0xc8, 0x70, 0x5c); // rouge chaud (point rouge)
 const SEL_FG: Color = Color::Rgb(0x1a, 0x12, 0x0d); // texte sur fond accent
 const BAR: Color = Color::Rgb(0x2b, 0x24, 0x1e); // --bar (fond des puces)
+const CHEEK: Color = Color::Rgb(0xd9, 0x53, 0x4f); // pommettes de la mascotte
 
 /// Point d'entrée du rendu : un cadre complet.
 pub fn render(app: &mut App, f: &mut Frame) {
@@ -112,13 +113,51 @@ pub fn render(app: &mut App, f: &mut Frame) {
 
 /// Logo Claude Code (glyphe officiel de la boîte « What's new ») en demi-blocs,
 /// couleur Claude.
+/// Mascotte de Claudine : la créature Claude déclinée avec des pommettes
+/// rouges. Dessinée sur une grille 9×6 pixels (corps terracotta `X`, yeux `o`,
+/// pommettes `r`) puis rendue en demi-blocs — deux lignes de pixels par ligne
+/// de texte — pour tenir dans les 3 lignes × 9 colonnes réservées de l'en-tête.
 fn claude_logo_lines() -> Vec<Line<'static>> {
-    let o = Style::default().fg(ACCENT);
-    vec![
-        Line::from(Span::styled(" ▐▛███▜▌", o)),
-        Line::from(Span::styled("▝▜█████▛▘", o)),
-        Line::from(Span::styled("  ▘▘ ▝▝", o)),
-    ]
+    const GRID: [&str; 6] = [
+        "..XXXXX..",
+        ".XXXXXXX.",
+        ".XoXXXoX.",
+        ".rXXXXXr.",
+        ".XXXXXXX.",
+        "..X.X.X..",
+    ];
+    let color = |c: u8| match c {
+        b'X' => Some(ACCENT),
+        b'o' => Some(FG),
+        b'r' => Some(CHEEK),
+        _ => None,
+    };
+
+    let mut lines = Vec::new();
+    let mut y = 0;
+    while y < GRID.len() {
+        let top = GRID[y].as_bytes();
+        let bottom: &[u8] = GRID.get(y + 1).map(|r| r.as_bytes()).unwrap_or(b"");
+        let mut spans = Vec::new();
+        for (x, &tc) in top.iter().enumerate() {
+            let t = color(tc);
+            let b = bottom.get(x).copied().and_then(color);
+            // Un demi-bloc encode deux pixels verticaux : moitié haute = `fg`,
+            // moitié basse = `bg`. Une moitié vide reste transparente (pas de
+            // `bg`), laissant transparaître le fond du terminal.
+            let (ch, style) = match (t, b) {
+                (None, None) => (" ", Style::default()),
+                (Some(t), None) => ("▀", Style::default().fg(t)),
+                (None, Some(b)) => ("▄", Style::default().fg(b)),
+                (Some(t), Some(b)) if t == b => ("█", Style::default().fg(t)),
+                (Some(t), Some(b)) => ("▀", Style::default().fg(t).bg(b)),
+            };
+            spans.push(Span::styled(ch, style));
+        }
+        lines.push(Line::from(spans));
+        y += 2;
+    }
+    lines
 }
 
 fn render_header(app: &App, f: &mut Frame, area: Rect) {
@@ -2089,22 +2128,35 @@ mod tests {
     }
 
     #[test]
-    fn claude_logo_is_exact_glyph() {
+    fn mascot_fits_header_slot() {
         let logo = claude_logo_lines();
+        // 3 lignes de demi-blocs (6 lignes de pixels) × 9 colonnes : tient dans
+        // la zone réservée de l'en-tête (LOGO_W = 9, hauteur 3).
         assert_eq!(logo.len(), 3);
-        let text: Vec<String> = logo
-            .iter()
-            .map(|l| {
-                l.spans
-                    .iter()
-                    .map(|s| s.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect();
-        // Glyphe officiel de la boîte « What's new » de Claude Code.
-        assert_eq!(text, vec![" ▐▛███▜▌", "▝▜█████▛▘", "  ▘▘ ▝▝"]);
-        // Tient dans la zone réservée de l'en-tête (LOGO_W = 9).
-        assert!(text.iter().all(|l| l.chars().count() <= 9));
+        assert!(logo.iter().all(|l| l.spans.len() <= 9));
+    }
+
+    #[test]
+    fn mascot_has_eyes_and_red_cheeks() {
+        let logo = claude_logo_lines();
+        // Récupère toutes les couleurs de premier plan / fond utilisées.
+        let mut fgs = std::collections::HashSet::new();
+        let mut bgs = std::collections::HashSet::new();
+        for line in &logo {
+            for s in &line.spans {
+                if let Some(c) = s.style.fg {
+                    fgs.insert(c);
+                }
+                if let Some(c) = s.style.bg {
+                    bgs.insert(c);
+                }
+            }
+        }
+        // Corps terracotta, yeux (blanc chaud) et pommettes rouges présents.
+        assert!(fgs.contains(&ACCENT), "corps terracotta");
+        assert!(fgs.contains(&FG), "yeux");
+        // Les pommettes occupent la moitié basse d'un demi-bloc → couleur de fond.
+        assert!(bgs.contains(&CHEEK), "pommettes rouges");
     }
 
     #[test]

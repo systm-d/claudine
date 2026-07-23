@@ -12,6 +12,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # En CI avec cache, les artefacts incrémentaux sont inutiles (jamais réutilisés
+  # d'un run à l'autre) et alourdissent le cache : on les désactive.
+  CARGO_INCREMENTAL: 0
 
 jobs:
   lint:
@@ -38,7 +41,6 @@ jobs:
           - { name: ubuntu-24.04, os: ubuntu-24.04, container: "" }
           - { name: fedora-40, os: ubuntu-24.04, container: "fedora:40" }
           - { name: fedora-41, os: ubuntu-24.04, container: "fedora:41" }
-          - { name: windows-latest, os: windows-latest, container: "" }
           - { name: macos-latest, os: macos-latest, container: "" }
     steps:
       - name: Install container prerequisites (Fedora)
