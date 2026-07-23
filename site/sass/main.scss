@@ -34,8 +34,15 @@ a { color: var(--brand); }
   padding: 4.5rem 1.25rem 2.5rem;
   text-align: center;
 }
-.topbar { margin-bottom: 1.5rem; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
 .wordmark { font-weight: 700; letter-spacing: .04em; font-size: .95rem; text-transform: uppercase; color: var(--muted); }
+.langswitch { display: flex; gap: .25rem; font: .78rem/1 var(--mono); }
+.langswitch a {
+  color: var(--muted); text-decoration: none; padding: .12rem .45rem; border-radius: .3rem;
+  border: 1px solid transparent; transition: color .15s, border-color .15s;
+}
+.langswitch a:hover { color: var(--fg); }
+.langswitch a.on { color: var(--brand); border-color: var(--line); }
 .logo { color: var(--brand); width: 118px; height: auto; display: block; margin: 0 auto 1.9rem; }
 .hero h1 {
   font-size: clamp(1.9rem, 4.5vw, 3rem);

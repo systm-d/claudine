@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 <header class="hero">
-  <div class="topbar"><span class="wordmark">Claudine</span></div>
+  <div class="topbar">
+    <span class="wordmark">Claudine</span>
+    <nav class="langswitch" aria-label="Language">
+      <a href="{{ get_url(path='/') }}"{% if lang == 'fr' %} class="on" aria-current="true"{% endif %}>FR</a>
+      <a href="{{ get_url(path='en/') }}"{% if lang == 'en' %} class="on" aria-current="true"{% endif %}>EN</a>
+    </nav>
+  </div>
   <svg class="logo" viewBox="0 0 9 6" width="128" role="img" aria-label="Mascotte Claudine" shape-rendering="crispEdges">
     <g fill="#d97757">
       <rect x="2" y="0" width="1" height="1"/>
