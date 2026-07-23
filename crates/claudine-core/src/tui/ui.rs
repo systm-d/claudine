@@ -16,8 +16,19 @@ use crate::tui::marketplaces::PluginCatalog;
 use crate::tui::mcp_editor::{McpEdit, McpLevel, McpRow};
 use crate::{MarketplaceSource, McpTransport, scan_projects};
 
-const ACCENT: Color = Color::Cyan;
-const DIM: Color = Color::DarkGray;
+// Palette alignée sur la landing page (site/sass/main.scss) : accent terracotta
+// « Claude » sur des tons chauds. La TUI ne peint pas de fond plein (elle
+// respecte le fond du terminal) ; on n'aligne que l'accent, le texte et les
+// couleurs d'état.
+const ACCENT: Color = Color::Rgb(0xd9, 0x77, 0x57); // --brand
+const FG: Color = Color::Rgb(0xec, 0xe6, 0xe0); // --fg (blanc chaud)
+const MUTED: Color = Color::Rgb(0xa8, 0x9e, 0x95); // --muted
+const DIM: Color = Color::Rgb(0x76, 0x6b, 0x62); // --dim
+const OK: Color = Color::Rgb(0x9e, 0xc2, 0x7e); // --ok (vert)
+const WARN: Color = Color::Rgb(0xc9, 0xa3, 0x5a); // ambre (point jaune)
+const DANGER: Color = Color::Rgb(0xc8, 0x70, 0x5c); // rouge chaud (point rouge)
+const SEL_FG: Color = Color::Rgb(0x1a, 0x12, 0x0d); // texte sur fond accent
+const BAR: Color = Color::Rgb(0x2b, 0x24, 0x1e); // --bar (fond des puces)
 
 /// Point d'entrée du rendu : un cadre complet.
 pub fn render(app: &mut App, f: &mut Frame) {
@@ -102,7 +113,7 @@ pub fn render(app: &mut App, f: &mut Frame) {
 /// Logo Claude Code (glyphe officiel de la boîte « What's new ») en demi-blocs,
 /// couleur Claude.
 fn claude_logo_lines() -> Vec<Line<'static>> {
-    let o = Style::default().fg(Color::Rgb(0xd9, 0x77, 0x57));
+    let o = Style::default().fg(ACCENT);
     vec![
         Line::from(Span::styled(" ▐▛███▜▌", o)),
         Line::from(Span::styled("▝▜█████▛▘", o)),
@@ -136,7 +147,7 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
         .select(app.section.index())
         .highlight_style(
             Style::default()
-                .fg(Color::Black)
+                .fg(SEL_FG)
                 .bg(ACCENT)
                 .add_modifier(Modifier::BOLD),
         )
@@ -303,7 +314,7 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
                     }
                     spans.push(Span::styled(
                         format!("  {} msg", s.message_count),
-                        Style::default().fg(Color::Gray),
+                        Style::default().fg(MUTED),
                     ));
                     spans.push(Span::styled(format!("  {last}"), Style::default().fg(DIM)));
                     spans.push(Span::styled(
@@ -385,7 +396,7 @@ fn render_transcript(app: &mut App, f: &mut Frame, area: Rect) {
             let style = if entry.unparsable || entry.noise {
                 Style::default().fg(DIM).add_modifier(Modifier::DIM)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(FG)
             };
             lines.push(Line::from(Span::styled(body_line.to_string(), style)));
         }
@@ -490,7 +501,7 @@ fn render_extensions(app: &mut App, f: &mut Frame, area: Rect) {
                 format!("  {}", h.event),
                 Style::default().add_modifier(Modifier::BOLD),
             ),
-            Span::styled(matcher, Style::default().fg(Color::Cyan)),
+            Span::styled(matcher, Style::default().fg(ACCENT)),
         ]));
         for cmd in &h.commands {
             lines.push(Line::from(Span::styled(
@@ -508,7 +519,7 @@ fn render_extensions(app: &mut App, f: &mut Frame, area: Rect) {
     }
     for p in &ext.plugins {
         let (mark, mark_style) = if p.enabled {
-            ("✓", Style::default().fg(Color::Green))
+            ("✓", Style::default().fg(OK))
         } else {
             ("✗", Style::default().fg(DIM))
         };
@@ -537,7 +548,7 @@ fn render_extensions(app: &mut App, f: &mut Frame, area: Rect) {
                 format!("  {}", m.name),
                 Style::default().add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("  ⟨{}⟩", m.scope), Style::default().fg(Color::Cyan)),
+            Span::styled(format!("  ⟨{}⟩", m.scope), Style::default().fg(ACCENT)),
         ]));
         lines.push(Line::from(Span::styled(
             format!("      {}", m.summary),
@@ -636,16 +647,16 @@ fn render_settings_form(app: &mut App, f: &mut Frame, area: Rect) {
         };
         let label_style = if selected {
             Style::default()
-                .fg(Color::Black)
+                .fg(SEL_FG)
                 .bg(ACCENT)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Gray)
+            Style::default().fg(MUTED)
         };
         let value_style = if selected {
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(FG)
         };
         let mut spans = vec![
             Span::styled(format!("  {:<28} ", spec.label), label_style),
@@ -718,7 +729,7 @@ fn render_settings_list_editor(app: &App, f: &mut Frame, area: Rect) {
         .highlight_style(
             Style::default()
                 .bg(ACCENT)
-                .fg(Color::Black)
+                .fg(SEL_FG)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -745,9 +756,9 @@ fn render_status(app: &App, f: &mut Frame, area: Rect) {
     let line = match &app.status {
         Some(msg) => {
             let style = if msg.starts_with("Échec") {
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+                Style::default().fg(DANGER).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Green)
+                Style::default().fg(OK)
             };
             Line::from(Span::styled(format!(" {msg}"), style))
         }
@@ -1085,7 +1096,7 @@ fn render_picker(app: &App, f: &mut Frame, area: Rect) {
         .highlight_style(
             Style::default()
                 .bg(ACCENT)
-                .fg(Color::Black)
+                .fg(SEL_FG)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -1159,7 +1170,7 @@ fn render_confirm_delete(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(Clear, popup);
     let block = Block::default().borders(Borders::ALL).title(Span::styled(
         title,
-        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        Style::default().fg(DANGER).add_modifier(Modifier::BOLD),
     ));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
@@ -1176,14 +1187,12 @@ fn render_confirm_delete(app: &App, f: &mut Frame, area: Rect) {
         Line::from(vec![
             Span::styled(
                 "  [o]",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(OK).add_modifier(Modifier::BOLD),
             ),
             Span::raw(" oui    "),
             Span::styled(
                 "[n]",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default().fg(DANGER).add_modifier(Modifier::BOLD),
             ),
             Span::raw(" non"),
         ]),
@@ -1219,7 +1228,7 @@ fn render_move_picker(app: &App, f: &mut Frame, area: Rect) {
         .highlight_style(
             Style::default()
                 .bg(ACCENT)
-                .fg(Color::Black)
+                .fg(SEL_FG)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -1321,7 +1330,7 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
         .highlight_style(
             Style::default()
                 .bg(ACCENT)
-                .fg(Color::Black)
+                .fg(SEL_FG)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -1370,7 +1379,7 @@ fn render_trash(app: &App, f: &mut Frame, area: Rect) {
         .highlight_style(
             Style::default()
                 .bg(ACCENT)
-                .fg(Color::Black)
+                .fg(SEL_FG)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -1391,8 +1400,8 @@ fn render_trash(app: &App, f: &mut Frame, area: Rect) {
         let warn = Paragraph::new(Line::from(Span::styled(
             msg,
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Red)
+                .fg(SEL_FG)
+                .bg(DANGER)
                 .add_modifier(Modifier::BOLD),
         )));
         f.render_widget(warn, area);
@@ -1454,10 +1463,10 @@ fn render_import(app: &App, f: &mut Frame, area: Rect) {
             lines.push(Line::from(format!("  • {} projet(s)", p.projects)));
             lines.push(Line::from(vec![Span::styled(
                 format!("  • {} session(s) nouvelle(s)", p.sessions_new),
-                Style::default().fg(Color::Green),
+                Style::default().fg(OK),
             )]));
             let conflict_style = if p.sessions_conflict > 0 {
-                Style::default().fg(Color::Yellow)
+                Style::default().fg(WARN)
             } else {
                 Style::default().fg(DIM)
             };
@@ -1476,7 +1485,7 @@ fn render_import(app: &App, f: &mut Frame, area: Rect) {
                 Span::styled(
                     if im.overwrite { "OUI" } else { "non" },
                     Style::default()
-                        .fg(if im.overwrite { Color::Yellow } else { DIM })
+                        .fg(if im.overwrite { WARN } else { DIM })
                         .add_modifier(Modifier::BOLD),
                 ),
             ]));
@@ -1599,8 +1608,8 @@ fn render_hooks_editor(app: &App, f: &mut Frame, area: Rect) {
         lines.push(Line::from(Span::styled(
             "  Supprimer l'élément sélectionné ? (o/n)",
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Red)
+                .fg(SEL_FG)
+                .bg(DANGER)
                 .add_modifier(Modifier::BOLD),
         )));
     }
@@ -1629,7 +1638,7 @@ fn render_plugins_toggle(app: &App, f: &mut Frame, area: Rect) {
         .iter()
         .map(|it| {
             let (mark, mstyle) = if it.enabled {
-                ("✓", Style::default().fg(Color::Green))
+                ("✓", Style::default().fg(OK))
             } else {
                 ("✗", Style::default().fg(DIM))
             };
@@ -1754,8 +1763,8 @@ fn render_mcp_editor(app: &App, f: &mut Frame, area: Rect) {
         lines.push(Line::from(Span::styled(
             "  Supprimer l'élément sélectionné ? (o/n)",
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Red)
+                .fg(SEL_FG)
+                .bg(DANGER)
                 .add_modifier(Modifier::BOLD),
         )));
     }
@@ -1843,8 +1852,8 @@ fn render_marketplaces(app: &App, f: &mut Frame, area: Rect) {
         lines.push(Line::from(Span::styled(
             format!("  Retirer « {name} » et son dossier ? (o/n)"),
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Red)
+                .fg(SEL_FG)
+                .bg(DANGER)
                 .add_modifier(Modifier::BOLD),
         )));
     } else if busy {
@@ -1925,8 +1934,8 @@ fn render_plugin_catalog(c: &PluginCatalog, job: Option<&MktJob>, f: &mut Frame,
         lines.push(Line::from(Span::styled(
             format!("  Désinstaller « {name} » ? (o/n)"),
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Red)
+                .fg(SEL_FG)
+                .bg(DANGER)
                 .add_modifier(Modifier::BOLD),
         )));
     }
@@ -1960,7 +1969,7 @@ fn pane_block(title: &str, focused: bool) -> Block<'static> {
             if focused {
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Gray)
+                Style::default().fg(MUTED)
             },
         ))
 }
@@ -1969,7 +1978,7 @@ fn selection_style(focused: bool) -> Style {
     if focused {
         Style::default()
             .bg(ACCENT)
-            .fg(Color::Black)
+            .fg(SEL_FG)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().add_modifier(Modifier::BOLD)
@@ -1985,14 +1994,11 @@ fn key_hints(pairs: &[(&str, &str)]) -> Vec<Span<'static>> {
         spans.push(Span::styled(
             format!(" {k} "),
             Style::default()
-                .bg(DIM)
-                .fg(Color::White)
+                .bg(BAR)
+                .fg(ACCENT)
                 .add_modifier(Modifier::BOLD),
         ));
-        spans.push(Span::styled(
-            format!(" {d}"),
-            Style::default().fg(Color::Gray),
-        ));
+        spans.push(Span::styled(format!(" {d}"), Style::default().fg(MUTED)));
     }
     spans
 }
