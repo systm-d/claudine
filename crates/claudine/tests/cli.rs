@@ -63,12 +63,14 @@ fn export_then_import_dry_run_roundtrip() {
 
 #[test]
 fn prints_version() {
+    // Version agnostique : suit `Cargo.toml` (pas de version en dur à maintenir
+    // à chaque montée de version).
     Command::cargo_bin("claudine")
         .unwrap()
         .arg("--version")
         .assert()
         .success()
-        .stdout(contains("claudine 0.1.2"));
+        .stdout(contains(format!("claudine {}", env!("CARGO_PKG_VERSION"))));
 }
 
 #[test]

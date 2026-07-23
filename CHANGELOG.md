@@ -9,6 +9,8 @@ Versionnage : [Semantic Versioning](https://semver.org/lang/fr/)
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-23
+
 Ajouté :
 - **Statistiques d'usage** : nouvel onglet « Usage » (`5`) agrégeant, sur le
   périmètre courant (home actif ou tous les homes), les tokens consommés
@@ -134,7 +136,8 @@ Ajouté :
 
 ---
 
-[Unreleased]: https://github.com/systm-d/claudine/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/systm-d/claudine/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/systm-d/claudine/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/systm-d/claudine/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/systm-d/claudine/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/systm-d/claudine/releases/tag/v0.1.0
