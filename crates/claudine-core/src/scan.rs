@@ -64,11 +64,15 @@ pub fn read_session_meta(path: &Path) -> Result<SessionMeta> {
     let mut cwd: Option<String> = None;
     let mut first_ts: Option<String> = None;
     let mut last_ts: Option<String> = None;
-    // Titre de session : Claude Code écrit des lignes `{"type":"summary",
-    // "summary":"…","leafUuid":"…"}` où `leafUuid` désigne le dernier message
-    // que ce résumé décrit. On associe chaque résumé à son `leafUuid` et on
-    // suit l'uuid du dernier message ; le titre retenu est celui dont le
-    // `leafUuid` correspond à cette feuille (à défaut, le dernier vu).
+    // Titre de session. Deux formats coexistent selon la version de Claude
+    // Code :
+    //   * moderne — `{"type":"ai-title","aiTitle":"…","sessionId":"…"}` : le
+    //     titre porte sur la session entière (le dernier vu fait foi en cas de
+    //     re-titrage) ;
+    //   * historique — `{"type":"summary","summary":"…","leafUuid":"…"}` : un
+    //     résumé par feuille, `leafUuid` désignant le message décrit.
+    // On privilégie `ai-title`, avec repli sur le résumé de la feuille courante.
+    let mut ai_title: Option<String> = None;
     let mut summaries: Vec<(Option<String>, String)> = Vec::new();
     let mut last_uuid: Option<String> = None;
 
@@ -77,18 +81,28 @@ pub fn read_session_meta(path: &Path) -> Result<SessionMeta> {
             continue;
         }
         if let Ok(v) = serde_json::from_str::<Value>(line) {
-            if v.get("type").and_then(|t| t.as_str()) == Some("summary") {
-                if let Some(sum) = v.get("summary").and_then(|s| s.as_str()) {
-                    let leaf = v
-                        .get("leafUuid")
-                        .and_then(|u| u.as_str())
-                        .map(str::to_string);
-                    summaries.push((leaf, sum.to_string()));
+            match v.get("type").and_then(|t| t.as_str()) {
+                Some("ai-title") => {
+                    if let Some(t) = v.get("aiTitle").and_then(|t| t.as_str()) {
+                        if !t.trim().is_empty() {
+                            ai_title = Some(t.to_string());
+                        }
+                    }
+                    continue;
                 }
-                // Les lignes de résumé ne sont pas des messages de la
-                // conversation : ne pas les compter ni en tirer cwd/timestamp.
-                continue;
+                Some("summary") => {
+                    if let Some(sum) = v.get("summary").and_then(|s| s.as_str()) {
+                        let leaf = v
+                            .get("leafUuid")
+                            .and_then(|u| u.as_str())
+                            .map(str::to_string);
+                        summaries.push((leaf, sum.to_string()));
+                    }
+                    continue;
+                }
+                _ => {}
             }
+            // Entrées de conversation : comptées, source de cwd/uuid/timestamps.
             message_count += 1;
             if cwd.is_none() {
                 if let Some(c) = v.get("cwd").and_then(|c| c.as_str()) {
@@ -110,18 +124,20 @@ pub fn read_session_meta(path: &Path) -> Result<SessionMeta> {
         }
     }
 
-    // Choix du titre : priorité au résumé de la feuille courante, sinon le
-    // dernier résumé rencontré.
-    let title = last_uuid
-        .as_ref()
-        .and_then(|leaf| {
-            summaries
-                .iter()
-                .rev()
-                .find(|(lu, _)| lu.as_deref() == Some(leaf.as_str()))
-                .map(|(_, s)| s.clone())
-        })
-        .or_else(|| summaries.last().map(|(_, s)| s.clone()));
+    // Priorité : `ai-title` (format moderne), sinon le résumé de la feuille
+    // courante, sinon le dernier résumé rencontré.
+    let title = ai_title.or_else(|| {
+        last_uuid
+            .as_ref()
+            .and_then(|leaf| {
+                summaries
+                    .iter()
+                    .rev()
+                    .find(|(lu, _)| lu.as_deref() == Some(leaf.as_str()))
+                    .map(|(_, s)| s.clone())
+            })
+            .or_else(|| summaries.last().map(|(_, s)| s.clone()))
+    });
 
     Ok(SessionMeta {
         id,
@@ -227,6 +243,46 @@ mod tests {
         assert_eq!(s.title.as_deref(), Some("Titre courant"));
         assert_eq!(s.message_count, 2);
         assert_eq!(s.display_label(), "Titre courant");
+    }
+
+    #[test]
+    fn extracts_ai_title_and_prefers_it_over_summary() {
+        let fake = FakeHome::new();
+        fake.add_session(
+            "-proj",
+            "aaaa1111-2222-3333-4444-555566667777",
+            &[
+                r#"{"type":"summary","summary":"Résumé historique","leafUuid":"u1"}"#,
+                r#"{"type":"ai-title","aiTitle":"Titre moderne","sessionId":"aaaa1111-2222-3333-4444-555566667777"}"#,
+                r#"{"type":"user","cwd":"/proj","uuid":"u1","timestamp":"2026-01-01T10:00:00Z","message":{"content":"a"}}"#,
+            ],
+        );
+        let home = ClaudeHome::from_base(fake.base());
+        let projects = scan_projects(&home).unwrap();
+        let s = &projects[0].sessions[0];
+        // `ai-title` prime, et n'est pas compté comme message.
+        assert_eq!(s.title.as_deref(), Some("Titre moderne"));
+        assert_eq!(s.message_count, 1);
+    }
+
+    #[test]
+    fn last_ai_title_wins_on_retitle() {
+        let fake = FakeHome::new();
+        fake.add_session(
+            "-proj",
+            "bbbb1111-2222-3333-4444-555566667777",
+            &[
+                r#"{"type":"ai-title","aiTitle":"Premier titre","sessionId":"s"}"#,
+                r#"{"type":"user","cwd":"/proj","message":{"content":"a"}}"#,
+                r#"{"type":"ai-title","aiTitle":"Titre renommé","sessionId":"s"}"#,
+            ],
+        );
+        let home = ClaudeHome::from_base(fake.base());
+        let projects = scan_projects(&home).unwrap();
+        assert_eq!(
+            projects[0].sessions[0].title.as_deref(),
+            Some("Titre renommé")
+        );
     }
 
     #[test]
