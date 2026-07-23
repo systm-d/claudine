@@ -28,8 +28,18 @@ et extensions (hooks, plugins, serveurs MCP).
   CI.
 - **Multi-home** — plusieurs installations Claude côte à côte (`~/.claude`,
   `~/.claude-perso`, …) ; vue agrégée repliable ou home ciblée.
-- **Recherche live** — filtre sur chemin/identifiant ou contenu des sessions
-  (touche `/`, puis `Tab` pour basculer).
+- **Sessions nommées** — la liste affiche le titre de la session (renommage ou
+  résumé enregistré par Claude Code) quand il existe, avec l'identifiant court
+  en repère ; à défaut, l'identifiant seul.
+- **Recherche live** — filtre sur nom/chemin/identifiant, puis cherche dans le
+  contenu des sessions au fur et à mesure de la frappe dès 3 caractères (touche
+  `/` ; `Tab` force la recherche de contenu même pour une requête plus courte).
+  Les extraits de résultats sont centrés sur le terme trouvé (texte des
+  messages, pas les métadonnées JSON).
+- **Transcript lisible** — la conversation est affichée sans le bruit interne
+  (métadonnées `mode`, snapshots, pièces jointes…) ; `a` révèle tout. Les
+  appels d'outils montrent leur argument principal, les résultats un aperçu.
+  Horodatages condensés (`2026-07-22 17:24`).
 - **Ménage & corbeille** — suppression récupérable des sessions et des projets ;
   restauration, suppression définitive ou vidage depuis le TUI.
 - **Export / Import** — bundle `.tar.gz` horodaté avec manifeste ; remap des
@@ -153,9 +163,10 @@ claudine
 | `↑ ↓` / `j k`     | Naviguer / défiler                                          |
 | `← →`             | Changer de panneau (vue Browse)                             |
 | `Enter`            | Ouvrir la session sélectionnée                              |
+| `a`                | Transcript : afficher/masquer les entrées internes          |
 | `Espace`           | Replier / déplier le home courant (vue agrégée)             |
 | `z`                | Tout replier / tout déplier (vue agrégée)                   |
-| `/`                | Rechercher (live chemin/id · `Tab` = contenu)               |
+| `/`                | Rechercher (live nom/chemin/id · contenu dès 3 caractères)  |
 | `d` / `Suppr`      | Envoyer en corbeille : session (Projets) ou projet (Projets)|
 | `m`                | Déplacer la session vers un autre projet                    |
 | `c`                | Corbeille : restaurer / supprimer définitivement / vider    |

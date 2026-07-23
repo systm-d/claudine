@@ -64,17 +64,53 @@ pub fn read_session_meta(path: &Path) -> Result<SessionMeta> {
     let mut cwd: Option<String> = None;
     let mut first_ts: Option<String> = None;
     let mut last_ts: Option<String> = None;
+    // Titre de session. Deux formats coexistent selon la version de Claude
+    // Code :
+    //   * moderne — `{"type":"ai-title","aiTitle":"…","sessionId":"…"}` : le
+    //     titre porte sur la session entière (le dernier vu fait foi en cas de
+    //     re-titrage) ;
+    //   * historique — `{"type":"summary","summary":"…","leafUuid":"…"}` : un
+    //     résumé par feuille, `leafUuid` désignant le message décrit.
+    // On privilégie `ai-title`, avec repli sur le résumé de la feuille courante.
+    let mut ai_title: Option<String> = None;
+    let mut summaries: Vec<(Option<String>, String)> = Vec::new();
+    let mut last_uuid: Option<String> = None;
 
     for line in content.lines() {
         if line.trim().is_empty() {
             continue;
         }
-        message_count += 1;
         if let Ok(v) = serde_json::from_str::<Value>(line) {
+            match v.get("type").and_then(|t| t.as_str()) {
+                Some("ai-title") => {
+                    if let Some(t) = v.get("aiTitle").and_then(|t| t.as_str()) {
+                        if !t.trim().is_empty() {
+                            ai_title = Some(t.to_string());
+                        }
+                    }
+                    continue;
+                }
+                Some("summary") => {
+                    if let Some(sum) = v.get("summary").and_then(|s| s.as_str()) {
+                        let leaf = v
+                            .get("leafUuid")
+                            .and_then(|u| u.as_str())
+                            .map(str::to_string);
+                        summaries.push((leaf, sum.to_string()));
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            // Entrées de conversation : comptées, source de cwd/uuid/timestamps.
+            message_count += 1;
             if cwd.is_none() {
                 if let Some(c) = v.get("cwd").and_then(|c| c.as_str()) {
                     cwd = Some(c.to_string());
                 }
+            }
+            if let Some(u) = v.get("uuid").and_then(|u| u.as_str()) {
+                last_uuid = Some(u.to_string());
             }
             if let Some(ts) = v.get("timestamp").and_then(|t| t.as_str()) {
                 if first_ts.is_none() {
@@ -82,8 +118,26 @@ pub fn read_session_meta(path: &Path) -> Result<SessionMeta> {
                 }
                 last_ts = Some(ts.to_string());
             }
+        } else {
+            // Ligne non parsable : conserve le comptage historique.
+            message_count += 1;
         }
     }
+
+    // Priorité : `ai-title` (format moderne), sinon le résumé de la feuille
+    // courante, sinon le dernier résumé rencontré.
+    let title = ai_title.or_else(|| {
+        last_uuid
+            .as_ref()
+            .and_then(|leaf| {
+                summaries
+                    .iter()
+                    .rev()
+                    .find(|(lu, _)| lu.as_deref() == Some(leaf.as_str()))
+                    .map(|(_, s)| s.clone())
+            })
+            .or_else(|| summaries.last().map(|(_, s)| s.clone()))
+    });
 
     Ok(SessionMeta {
         id,
@@ -93,6 +147,7 @@ pub fn read_session_meta(path: &Path) -> Result<SessionMeta> {
         first_ts,
         last_ts,
         size,
+        title,
     })
 }
 
@@ -165,6 +220,103 @@ mod tests {
                 "dddddddd-dddd-dddd-dddd-dddddddddddd", // sans date → dernier
             ]
         );
+    }
+
+    #[test]
+    fn extracts_summary_title_for_current_leaf() {
+        let fake = FakeHome::new();
+        fake.add_session(
+            "-proj",
+            "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+            &[
+                r#"{"type":"summary","summary":"Ancien titre","leafUuid":"u1"}"#,
+                r#"{"type":"summary","summary":"Titre courant","leafUuid":"u2"}"#,
+                r#"{"type":"user","cwd":"/proj","uuid":"u1","timestamp":"2026-01-01T10:00:00Z","message":{"content":"a"}}"#,
+                r#"{"type":"assistant","uuid":"u2","timestamp":"2026-01-01T10:01:00Z","message":{"content":"b"}}"#,
+            ],
+        );
+        let home = ClaudeHome::from_base(fake.base());
+        let projects = scan_projects(&home).unwrap();
+        let s = &projects[0].sessions[0];
+        // Le titre retenu est celui de la feuille courante (dernier message u2),
+        // et les lignes de résumé ne sont pas comptées comme messages.
+        assert_eq!(s.title.as_deref(), Some("Titre courant"));
+        assert_eq!(s.message_count, 2);
+        assert_eq!(s.display_label(), "Titre courant");
+    }
+
+    #[test]
+    fn extracts_ai_title_and_prefers_it_over_summary() {
+        let fake = FakeHome::new();
+        fake.add_session(
+            "-proj",
+            "aaaa1111-2222-3333-4444-555566667777",
+            &[
+                r#"{"type":"summary","summary":"Résumé historique","leafUuid":"u1"}"#,
+                r#"{"type":"ai-title","aiTitle":"Titre moderne","sessionId":"aaaa1111-2222-3333-4444-555566667777"}"#,
+                r#"{"type":"user","cwd":"/proj","uuid":"u1","timestamp":"2026-01-01T10:00:00Z","message":{"content":"a"}}"#,
+            ],
+        );
+        let home = ClaudeHome::from_base(fake.base());
+        let projects = scan_projects(&home).unwrap();
+        let s = &projects[0].sessions[0];
+        // `ai-title` prime, et n'est pas compté comme message.
+        assert_eq!(s.title.as_deref(), Some("Titre moderne"));
+        assert_eq!(s.message_count, 1);
+    }
+
+    #[test]
+    fn last_ai_title_wins_on_retitle() {
+        let fake = FakeHome::new();
+        fake.add_session(
+            "-proj",
+            "bbbb1111-2222-3333-4444-555566667777",
+            &[
+                r#"{"type":"ai-title","aiTitle":"Premier titre","sessionId":"s"}"#,
+                r#"{"type":"user","cwd":"/proj","message":{"content":"a"}}"#,
+                r#"{"type":"ai-title","aiTitle":"Titre renommé","sessionId":"s"}"#,
+            ],
+        );
+        let home = ClaudeHome::from_base(fake.base());
+        let projects = scan_projects(&home).unwrap();
+        assert_eq!(
+            projects[0].sessions[0].title.as_deref(),
+            Some("Titre renommé")
+        );
+    }
+
+    #[test]
+    fn falls_back_to_last_summary_without_matching_leaf() {
+        let fake = FakeHome::new();
+        fake.add_session(
+            "-proj",
+            "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            &[
+                r#"{"type":"summary","summary":"Titre orphelin","leafUuid":"zzz"}"#,
+                r#"{"type":"user","cwd":"/proj","uuid":"u9","timestamp":"2026-01-01T10:00:00Z","message":{"content":"a"}}"#,
+            ],
+        );
+        let home = ClaudeHome::from_base(fake.base());
+        let projects = scan_projects(&home).unwrap();
+        assert_eq!(
+            projects[0].sessions[0].title.as_deref(),
+            Some("Titre orphelin")
+        );
+    }
+
+    #[test]
+    fn no_summary_means_no_title_and_id_label() {
+        let fake = FakeHome::new();
+        fake.add_session(
+            "-proj",
+            "12345678-0000-0000-0000-000000000000",
+            &[r#"{"type":"user","cwd":"/proj","message":{"content":"a"}}"#],
+        );
+        let home = ClaudeHome::from_base(fake.base());
+        let projects = scan_projects(&home).unwrap();
+        let s = &projects[0].sessions[0];
+        assert_eq!(s.title, None);
+        assert_eq!(s.display_label(), "12345678");
     }
 
     #[test]

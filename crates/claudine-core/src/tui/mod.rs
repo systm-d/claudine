@@ -348,6 +348,8 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('/') => app.open_search(),
         KeyCode::Char('y') => app.copy_selected_session_id(),
         KeyCode::Char('c') => app.open_trash(),
+        // Transcript : afficher/masquer les entrées internes (métadonnées).
+        KeyCode::Char('a') => app.toggle_transcript_detail(),
         // Section Config : enregistrer / basculer vers le JSON brut.
         KeyCode::Char('s') => app.save_settings(),
         KeyCode::Char('r') => app.toggle_settings_raw(),

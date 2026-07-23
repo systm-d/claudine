@@ -16,7 +16,7 @@ cta2 = "Installer"
 <div class="tui-head"><span class="tui-brand">Claudine</span><span class="tabs"><span class="tab active">Projets</span><span class="tab">Mémoire</span><span class="tab">Config</span><span class="tab">Extensions</span></span><span class="tui-home">2 homes</span></div>
 <div class="tui-panels">
 <div class="tui-col"><div class="col-title">Projets</div><div class="row sel">▸ delfour.co/system</div><div class="row">levilainpetit.dev</div><div class="row">dotfiles</div><div class="row dim">+ 4 autres…</div></div>
-<div class="tui-col grow"><div class="col-title">Sessions</div><div class="row"><span class="mark">●</span> il y a 2 h · refactor core <span class="dim">(142 msg)</span></div><div class="row">hier · fix marketplaces install</div><div class="row">il y a 3 j · logo TUI exact</div><div class="row">il y a 5 j · export bundle .tar.gz</div></div>
+<div class="tui-col grow"><div class="col-title">Sessions</div><div class="row sel">▸ <span class="mark">refactor core</span> <span class="dim">a1b2c3d4 · 142 msg · 2026-07-22 17:24</span></div><div class="row">fix marketplaces install <span class="dim">7f3e0c11 · 88 msg · 2026-07-21 09:12</span></div><div class="row">logo TUI exact <span class="dim">2b9dd4a6 · 41 msg · 2026-07-19 18:44</span></div><div class="row">export bundle .tar.gz <span class="dim">c0771e9f · 63 msg · 2026-07-17 11:07</span></div></div>
 </div>
 <div class="tui-foot"><span class="key">/</span> rechercher<span class="key">m</span> déplacer<span class="key">c</span> corbeille<span class="key">?</span> aide</div>
 </div>
@@ -40,7 +40,9 @@ cta2 = "Installer"
 <section class="features">
 <h2>Ce que fait Claudine</h2>
 <div class="grid">
-<div class="card"><h3>Sessions &amp; projets</h3><p>Parcours, recherche, déplace et restaure les sessions de toutes tes homes.</p></div>
+<div class="card"><h3>Sessions nommées</h3><p>La liste affiche le titre de la session, pas l'UUID — déplace et restaure sur toutes tes homes.</p></div>
+<div class="card"><h3>Recherche live</h3><p>Filtre nom / chemin / id à la frappe, puis cherche dans le contenu dès 3 caractères — extraits centrés sur le terme.</p></div>
+<div class="card"><h3>Transcript lisible</h3><p>La conversation sans le bruit interne ; appels d'outils et résultats résumés ; horodatages condensés.</p></div>
 <div class="card"><h3>Mémoire</h3><p>Consulte la mémoire utilisateur (CLAUDE.md) directement dans le terminal.</p></div>
 <div class="card"><h3>Configuration</h3><p>Édite settings.json avec écriture atomique et sauvegarde horodatée.</p></div>
 <div class="card"><h3>Extensions</h3><p>Hooks, serveurs MCP et plugins : lecture, édition, activation.</p></div>
