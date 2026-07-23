@@ -17,6 +17,7 @@ pub mod search;
 pub mod selfupdate;
 pub mod settings;
 pub mod tui;
+pub mod usage;
 
 mod cli;
 mod commands;
@@ -48,6 +49,10 @@ pub use remap::{RemapRule, RemapTable, rewrite_jsonl_line};
 pub use scan::{read_session_meta, scan_projects};
 pub use search::find_in_session;
 pub use settings::{FieldKind, FieldSpec, SettingsDoc, settings_catalog};
+pub use usage::{
+    Date, HeatCell, Heatmap, ModelPrice, ModelRow, Tokens, Usage, fmt_tokens, fmt_usd, price_for,
+    read_session_usage, usage_from_jsonl,
+};
 
 use std::process::ExitCode;
 
