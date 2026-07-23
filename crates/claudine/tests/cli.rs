@@ -68,7 +68,7 @@ fn prints_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(contains("claudine 0.1.1"));
+        .stdout(contains("claudine 0.1.2"));
 }
 
 #[test]

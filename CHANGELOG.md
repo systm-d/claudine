@@ -9,6 +9,22 @@ Versionnage : [Semantic Versioning](https://semver.org/lang/fr/)
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-23
+
+Ajouté :
+- **Sessions nommées** : la liste affiche le titre de la session (format
+  `ai-title`, avec repli sur `summary`) au lieu du seul identifiant.
+- **Recherche de contenu en direct** dès 3 caractères (au-delà du filtre
+  nom/chemin/id), avec extraits centrés sur le terme trouvé (texte des
+  messages, plus les métadonnées JSON).
+- Transcript : `a` affiche/masque les entrées internes (métadonnées).
+
+Modifié :
+- Transcript épuré par défaut (entrées non conversationnelles masquées) ;
+  appels d'outils résumés avec leur argument principal et résultats en aperçu.
+- Horodatages condensés (`AAAA-MM-JJ HH:MM`) dans la liste et le transcript.
+- Palette de la TUI alignée sur la landing page (accent terracotta).
+
 ## [0.1.1] - 2026-07-20
 
 Corrigé :
@@ -103,7 +119,8 @@ Ajouté :
 
 ---
 
-[Unreleased]: https://github.com/systm-d/claudine/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/systm-d/claudine/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/systm-d/claudine/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/systm-d/claudine/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/systm-d/claudine/releases/tag/v0.1.0
 [0.0.2]: https://github.com/systm-d/claudine/releases/tag/v0.0.2
