@@ -9,6 +9,16 @@ Versionnage : [Semantic Versioning](https://semver.org/lang/fr/)
 
 ## [Unreleased]
 
+Ajouté :
+- **Statistiques d'usage** : nouvel onglet « Usage » (`5`) agrégeant, sur le
+  périmètre courant (home actif ou tous les homes), les tokens consommés
+  (entrée / sortie / cache) et une **estimation de coût** par famille de modèle,
+  avec un tableau par modèle.
+- **Grille d'activité** façon GitHub (tons terracotta de l'interface) : intensité
+  quotidienne des tokens sur ~un an, calculée sans dépendance de date externe.
+- **Détail par session** : touche `u` sur une session (onglet Projets) ouvre un
+  pop-up avec sa décomposition de tokens, son coût estimé et son activité par jour.
+
 ## [0.1.2] - 2026-07-23
 
 Ajouté :
