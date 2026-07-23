@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::app::{App, BrowseView, DeleteKind, Focus, PickerMode, PurgeScope, Section};
-use crate::tui::app::{MIN_CONTENT_QUERY, MktJob, human_size, humanize_path};
+use crate::tui::app::{MIN_CONTENT_QUERY, MktJob, human_size, humanize_path, humanize_ts};
 use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
 use crate::tui::marketplaces::MktMode;
 use crate::tui::marketplaces::PluginCatalog;
@@ -273,7 +273,11 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
             p.sessions
                 .iter()
                 .map(|s| {
-                    let last = s.last_ts.clone().unwrap_or_else(|| "—".to_string());
+                    let last = s
+                        .last_ts
+                        .as_deref()
+                        .map(humanize_ts)
+                        .unwrap_or_else(|| "—".to_string());
                     // Colonne de tête : le titre (renommage / résumé) s'il
                     // existe, sinon l'id court. Le titre peut être long : on le
                     // tronque pour laisser la place aux métadonnées.
@@ -347,27 +351,38 @@ fn render_transcript(app: &mut App, f: &mut Frame, area: Rect) {
     };
     let title = format!(" Transcript — {proj_name} · {sess_id} ");
 
+    let hidden = app.hidden_transcript_count();
+    let right_hint = if app.transcript_show_all {
+        " y copier l'id · a masquer internes · Esc retour ".to_string()
+    } else if hidden > 0 {
+        format!(" y copier l'id · a voir {hidden} internes · Esc retour ")
+    } else {
+        " y copier l'id · Esc retour ".to_string()
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .title(Span::styled(
             title,
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ))
-        .title(Line::from(" y copier l'id · Esc retour ").right_aligned());
+        .title(Line::from(right_hint).right_aligned());
     let inner = block.inner(area);
     f.render_widget(block, area);
     app.transcript_viewport = inner.height as usize;
 
     let mut lines: Vec<Line> = Vec::new();
-    for entry in &app.transcript {
+    for entry in app.visible_transcript() {
         let header_style = if entry.unparsable {
             Style::default().fg(DIM).add_modifier(Modifier::DIM)
+        } else if entry.noise {
+            Style::default().fg(DIM)
         } else {
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
         };
         lines.push(Line::from(Span::styled(entry.header.clone(), header_style)));
         for body_line in entry.body.lines() {
-            let style = if entry.unparsable {
+            let style = if entry.unparsable || entry.noise {
                 Style::default().fg(DIM).add_modifier(Modifier::DIM)
             } else {
                 Style::default().fg(Color::White)
@@ -378,6 +393,13 @@ fn render_transcript(app: &mut App, f: &mut Frame, area: Rect) {
             lines.push(Line::from(""));
         }
         lines.push(Line::from(""));
+    }
+
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (conversation vide — « a » pour afficher les entrées internes)",
+            Style::default().fg(DIM),
+        )));
     }
 
     let para = Paragraph::new(Text::from(lines))
@@ -755,8 +777,8 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
     // Recherche : raccourcis prioritaires.
     if app.search.is_some() {
         let hints = key_hints(&[
-            ("saisir", "filtrer (chemin/id)"),
-            ("Tab", "contenu"),
+            ("saisir", "nom/chemin/id · contenu dès 3 car."),
+            ("Tab", "forcer contenu"),
             ("↑/↓", "résultat"),
             ("Enter", "ouvrir"),
             ("Esc", "fermer"),
@@ -834,8 +856,9 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
             ("↑/↓", "défiler"),
             ("PgUp/PgDn", "page"),
             ("Home/End", "bornes"),
+            ("a", "détails"),
+            ("y", "copier id"),
             ("Esc", "retour"),
-            ("e", "export"),
             ("h", "homes"),
             ("?", "aide"),
             ("q", "quitter"),
@@ -939,7 +962,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         ("Enter", "ouvrir la session sélectionnée"),
         ("Espace", "replier / déplier le home courant (agrégé)"),
         ("z", "tout replier / tout déplier (agrégé)"),
-        ("/", "rechercher (live chemin/id · Tab/Entrée = contenu)"),
+        ("/", "rechercher (live nom/chemin/id · contenu dès 3 car.)"),
         (
             "y",
             "copier l'identifiant complet de la session sélectionnée",

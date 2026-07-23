@@ -34,6 +34,12 @@ et extensions (hooks, plugins, serveurs MCP).
 - **Recherche live** — filtre sur nom/chemin/identifiant, puis cherche dans le
   contenu des sessions au fur et à mesure de la frappe dès 3 caractères (touche
   `/` ; `Tab` force la recherche de contenu même pour une requête plus courte).
+  Les extraits de résultats sont centrés sur le terme trouvé (texte des
+  messages, pas les métadonnées JSON).
+- **Transcript lisible** — la conversation est affichée sans le bruit interne
+  (métadonnées `mode`, snapshots, pièces jointes…) ; `a` révèle tout. Les
+  appels d'outils montrent leur argument principal, les résultats un aperçu.
+  Horodatages condensés (`2026-07-22 17:24`).
 - **Ménage & corbeille** — suppression récupérable des sessions et des projets ;
   restauration, suppression définitive ou vidage depuis le TUI.
 - **Export / Import** — bundle `.tar.gz` horodaté avec manifeste ; remap des
@@ -157,6 +163,7 @@ claudine
 | `↑ ↓` / `j k`     | Naviguer / défiler                                          |
 | `← →`             | Changer de panneau (vue Browse)                             |
 | `Enter`            | Ouvrir la session sélectionnée                              |
+| `a`                | Transcript : afficher/masquer les entrées internes          |
 | `Espace`           | Replier / déplier le home courant (vue agrégée)             |
 | `z`                | Tout replier / tout déplier (vue agrégée)                   |
 | `/`                | Rechercher (live nom/chemin/id · contenu dès 3 caractères)  |

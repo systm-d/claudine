@@ -106,6 +106,10 @@ pub struct TranscriptEntry {
     pub body: String,
     /// Vrai si la ligne d'origine n'a pas pu être parsée.
     pub unparsable: bool,
+    /// Vrai pour les entrées non conversationnelles (métadonnées internes :
+    /// `mode`, `file-history-snapshot`, `attachment`, `ai-title`, …). Masquées
+    /// par défaut à l'affichage, révélables via la bascule « détails ».
+    pub noise: bool,
 }
 
 /// Une cible de déplacement de session : un projet (cwd) dans un home donné.
@@ -281,6 +285,9 @@ pub struct App {
     pub transcript_scroll: usize,
     /// Hauteur de la zone de transcript au dernier rendu (pour le clamp du scroll).
     pub transcript_viewport: usize,
+    /// Si vrai, affiche aussi les entrées « bruit » (métadonnées internes) du
+    /// transcript ; sinon on ne montre que la conversation. Bascule : `a`.
+    pub transcript_show_all: bool,
 
     // --- Memory ---
     pub memory_lines: Vec<String>,
@@ -378,6 +385,7 @@ impl App {
             transcript: Vec::new(),
             transcript_scroll: 0,
             transcript_viewport: 1,
+            transcript_show_all: false,
             memory_lines,
             memory_scroll: 0,
             memory_viewport: 1,
@@ -731,10 +739,34 @@ impl App {
         }
     }
 
+    /// Entrées du transcript effectivement affichées : la conversation seule,
+    /// ou tout (bruit compris) selon [`Self::transcript_show_all`].
+    pub fn visible_transcript(&self) -> impl Iterator<Item = &TranscriptEntry> {
+        let show_all = self.transcript_show_all;
+        self.transcript.iter().filter(move |e| show_all || !e.noise)
+    }
+
+    /// Nombre d'entrées « bruit » masquées (0 si tout est déjà visible).
+    pub fn hidden_transcript_count(&self) -> usize {
+        if self.transcript_show_all {
+            0
+        } else {
+            self.transcript.iter().filter(|e| e.noise).count()
+        }
+    }
+
+    /// Bascule l'affichage des entrées internes du transcript. Sans effet hors
+    /// de la vue transcript.
+    pub fn toggle_transcript_detail(&mut self) {
+        if self.section == Section::Browse && self.browse_view == BrowseView::Transcript {
+            self.transcript_show_all = !self.transcript_show_all;
+            self.transcript_scroll = self.transcript_scroll.min(self.transcript_max_scroll());
+        }
+    }
+
     fn transcript_total_lines(&self) -> usize {
         // En-tête + corps (chaque corps peut être multi-lignes) + ligne vide de séparation.
-        self.transcript
-            .iter()
+        self.visible_transcript()
             .map(|e| 1 + e.body.lines().count().max(1) + 1)
             .sum()
     }
@@ -2237,6 +2269,7 @@ pub fn parse_transcript(path: &std::path::Path) -> Vec<TranscriptEntry> {
                 header: "▌ erreur".to_string(),
                 body: format!("Impossible de lire la session : {e}"),
                 unparsable: true,
+                noise: false,
             }];
         }
     };
@@ -2252,6 +2285,7 @@ pub fn parse_transcript(path: &std::path::Path) -> Vec<TranscriptEntry> {
                 header: "▌ ?".to_string(),
                 body: "⚠ (ligne non parsable)".to_string(),
                 unparsable: true,
+                noise: false,
             }),
         }
     }
@@ -2260,25 +2294,44 @@ pub fn parse_transcript(path: &std::path::Path) -> Vec<TranscriptEntry> {
             header: "▌ vide".to_string(),
             body: "(session sans message)".to_string(),
             unparsable: false,
+            noise: false,
         });
     }
     entries
 }
 
+/// Types d'entrées non conversationnelles (métadonnées internes de Claude Code)
+/// masquées par défaut dans le transcript.
+const NOISE_TYPES: &[&str] = &[
+    "queue-operation",
+    "last-prompt",
+    "mode",
+    "permission-mode",
+    "file-history-snapshot",
+    "ai-title",
+    "summary",
+    "attachment",
+];
+
 fn entry_from_value(v: &Value) -> TranscriptEntry {
-    // Rôle/type : `message.role` en priorité, sinon `type`.
+    // Type brut de la ligne (avant repli sur le rôle) : sert au classement en
+    // « bruit ».
+    let raw_type = v.get("type").and_then(|t| t.as_str());
+    let noise = raw_type.is_some_and(|t| NOISE_TYPES.contains(&t));
+
+    // Rôle/type affiché : `message.role` en priorité, sinon `type`.
     let role = v
         .get("message")
         .and_then(|m| m.get("role"))
         .and_then(|r| r.as_str())
-        .or_else(|| v.get("type").and_then(|t| t.as_str()))
+        .or(raw_type)
         .unwrap_or("?");
     let ts = v.get("timestamp").and_then(|t| t.as_str()).unwrap_or("");
 
     let header = if ts.is_empty() {
         format!("▌ {role}")
     } else {
-        format!("▌ {role} · {ts}")
+        format!("▌ {role} · {}", humanize_ts(ts))
     };
 
     // Le contenu peut être `message.content` ou `content`.
@@ -2292,10 +2345,13 @@ fn entry_from_value(v: &Value) -> TranscriptEntry {
         header,
         body,
         unparsable: false,
+        noise,
     }
 }
 
 /// Extrait le texte d'un champ `content` : chaîne brute, ou tableau de blocs.
+/// Les appels d'outils sont résumés avec leur argument principal (commande,
+/// fichier, motif…) et les résultats d'outils avec un court aperçu.
 fn extract_text(content: Option<&Value>) -> String {
     match content {
         Some(Value::String(s)) => s.clone(),
@@ -2311,9 +2367,15 @@ fn extract_text(content: Option<&Value>) -> String {
                     }
                     "tool_use" => {
                         let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-                        parts.push(format!("⚙ tool_use: {name}"));
+                        match tool_use_detail(item.get("input")) {
+                            Some(detail) => parts.push(format!("⚙ {name}: {detail}")),
+                            None => parts.push(format!("⚙ {name}")),
+                        }
                     }
-                    "tool_result" => parts.push("↳ tool_result".to_string()),
+                    "tool_result" => match tool_result_preview(item.get("content")) {
+                        Some(preview) => parts.push(format!("↳ {preview}")),
+                        None => parts.push("↳ tool_result".to_string()),
+                    },
                     _ => {}
                 }
             }
@@ -2324,6 +2386,72 @@ fn extract_text(content: Option<&Value>) -> String {
             }
         }
         _ => "(contenu absent)".to_string(),
+    }
+}
+
+/// Résumé de l'argument principal d'un appel d'outil : on prend le premier
+/// champ textuel parlant de l'`input` (commande, fichier, motif, url…),
+/// condensé et tronqué.
+fn tool_use_detail(input: Option<&Value>) -> Option<String> {
+    let input = input?;
+    const KEYS: &[&str] = &[
+        "command",
+        "file_path",
+        "path",
+        "pattern",
+        "query",
+        "url",
+        "description",
+        "prompt",
+    ];
+    let raw = KEYS
+        .iter()
+        .find_map(|k| input.get(*k).and_then(|v| v.as_str()))?;
+    Some(condense(raw, 100))
+}
+
+/// Court aperçu du contenu d'un `tool_result` (chaîne ou blocs de texte).
+fn tool_result_preview(content: Option<&Value>) -> Option<String> {
+    let text = match content? {
+        Value::String(s) => s.clone(),
+        Value::Array(items) => items
+            .iter()
+            .filter_map(|it| it.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => return None,
+    };
+    let text = text.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(condense(text, 100))
+    }
+}
+
+/// Réduit un texte à une seule ligne (espaces condensés) tronquée à `max`
+/// caractères, avec une ellipse si tronqué.
+fn condense(s: &str, max: usize) -> String {
+    let one_line = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one_line.chars().count() <= max {
+        return one_line;
+    }
+    let head: String = one_line.chars().take(max).collect();
+    format!("{head}…")
+}
+
+/// Rend un horodatage RFC 3339 (`2026-07-22T17:24:08.917Z`) plus lisible :
+/// `2026-07-22 17:24` (secondes, millisecondes et suffixe `Z` retirés).
+/// Renvoie l'entrée telle quelle si le format est inattendu.
+pub fn humanize_ts(ts: &str) -> String {
+    let ts = ts.trim();
+    let Some((date, time)) = ts.split_once('T') else {
+        return ts.to_string();
+    };
+    let mut fields = time.split(':');
+    match (fields.next(), fields.next()) {
+        (Some(h), Some(m)) if !h.is_empty() && !m.is_empty() => format!("{date} {h}:{m}"),
+        _ => ts.to_string(),
     }
 }
 
@@ -2443,7 +2571,7 @@ mod tests {
         let e = entry_from_value(&v);
         assert!(e.header.contains("assistant"));
         assert!(e.body.contains("bonjour"));
-        assert!(e.body.contains("⚙ tool_use: Read"));
+        assert!(e.body.contains("⚙ Read"));
         assert!(e.body.contains("↳ tool_result"));
     }
 
@@ -2460,6 +2588,63 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert!(entries[0].unparsable);
         assert!(entries[1].body.contains("salut"));
+    }
+
+    #[test]
+    fn humanize_ts_shortens_rfc3339() {
+        assert_eq!(humanize_ts("2026-07-22T17:24:08.917Z"), "2026-07-22 17:24");
+        assert_eq!(humanize_ts("2026-01-01T00:00:00Z"), "2026-01-01 00:00");
+        // Format inattendu : renvoyé tel quel.
+        assert_eq!(humanize_ts("hier"), "hier");
+    }
+
+    #[test]
+    fn transcript_marks_noise_and_filters_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("s.jsonl");
+        fs::write(
+            &p,
+            [
+                r#"{"type":"mode","mode":"default"}"#,
+                r#"{"type":"file-history-snapshot"}"#,
+                r#"{"type":"user","message":{"content":"vraie question"}}"#,
+                r#"{"type":"ai-title","title":"Un titre"}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let entries = parse_transcript(&p);
+        assert_eq!(entries.len(), 4);
+        let noise: Vec<bool> = entries.iter().map(|e| e.noise).collect();
+        assert_eq!(noise, vec![true, true, false, true]);
+
+        // Sans le mode détaillé, seule la vraie conversation reste visible.
+        let (_d, home) = temp_home();
+        let mut app = App::with_homes(vec![home]);
+        app.transcript = entries;
+        assert_eq!(app.visible_transcript().count(), 1);
+        assert_eq!(app.hidden_transcript_count(), 3);
+        app.transcript_show_all = true;
+        assert_eq!(app.visible_transcript().count(), 4);
+        assert_eq!(app.hidden_transcript_count(), 0);
+    }
+
+    #[test]
+    fn transcript_enriches_tool_use_and_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("s.jsonl");
+        fs::write(
+            &p,
+            [
+                r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"cargo test"}}]}}"#,
+                r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"42 passed"}]}}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let entries = parse_transcript(&p);
+        assert!(entries[0].body.contains("Bash: cargo test"));
+        assert!(entries[1].body.contains("42 passed"));
     }
 
     #[test]
