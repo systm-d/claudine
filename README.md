@@ -24,8 +24,12 @@ et extensions (hooks, plugins, serveurs MCP).
 
 - **TUI interactif** — cinq onglets (Projets, Mémoire, Config, Extensions,
   Usage) ; navigation clavier complète.
-- **CLI** — sous-commandes `export`, `import`, `homes` pour les scripts et la
-  CI.
+- **CLI** — sous-commandes `export`, `import`, `homes`, `update` pour les
+  scripts et la CI.
+- **Auto-mise à jour** — `claudine update` télécharge et installe la dernière
+  release GitHub pour votre plateforme (Linux x86-64, macOS Apple Silicon,
+  Windows x86-64) ; `--check` signale simplement qu'une version existe. Honore
+  `HTTPS_PROXY`.
 - **Multi-home** — plusieurs installations Claude côte à côte (`~/.claude`,
   `~/.claude-perso`, …) ; vue agrégée repliable ou home ciblée.
 - **Sessions nommées** — la liste affiche le titre de la session (renommage ou
@@ -214,6 +218,12 @@ claudine homes add ~/.claude-perso --label perso
 
 # Retirer une home
 claudine homes remove perso
+
+# Vérifier si une mise à jour est disponible
+claudine update --check
+
+# Installer la dernière version (remplace le binaire courant)
+claudine update
 ```
 
 ---

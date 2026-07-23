@@ -18,6 +18,11 @@ Ajouté :
   quotidienne des tokens sur ~un an, calculée sans dépendance de date externe.
 - **Détail par session** : touche `u` sur une session (onglet Projets) ouvre un
   pop-up avec sa décomposition de tokens, son coût estimé et son activité par jour.
+- **Auto-mise à jour** : commande `claudine update` qui télécharge et installe
+  la dernière release GitHub pour la plateforme courante (Linux x86-64, macOS
+  Apple Silicon, Windows x86-64), puis remplace le binaire en cours d'exécution.
+  `--check` se contente de signaler qu'une version plus récente existe.
+  Honore `HTTPS_PROXY` pour fonctionner derrière un proxy d'entreprise.
 
 ## [0.1.2] - 2026-07-23
 

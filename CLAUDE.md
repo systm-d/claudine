@@ -38,6 +38,7 @@ marketplaces). Rust workspace: `claudine-core` (library: pure logic plus
 | Export manifest format | `crates/claudine-core/src/manifest.rs` |
 | Encoded-path codec | `crates/claudine-core/src/pathcodec.rs` |
 | CLI command / argument | `crates/claudine-core/src/cli.rs`, `commands/*` |
+| Self-update (`claudine update`) | `crates/claudine-core/src/selfupdate.rs`, `commands/update.rs` |
 | TUI screen / widget | `crates/claudine-core/src/tui/*` |
 
 ## Quality gate
