@@ -14,6 +14,7 @@ pub mod pathcodec;
 pub mod remap;
 pub mod scan;
 pub mod search;
+pub mod selfupdate;
 pub mod settings;
 pub mod tui;
 

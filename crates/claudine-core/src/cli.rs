@@ -46,6 +46,12 @@ enum Command {
         #[command(subcommand)]
         action: Option<HomesAction>,
     },
+    /// Met à jour claudine vers la dernière release GitHub
+    Update {
+        /// Vérifie seulement la disponibilité d'une mise à jour (n'installe rien)
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -95,6 +101,9 @@ impl Cli {
                     commands::homes::run_homes_remove(label).map_err(anyhow::Error::msg)
                 }
             },
+            Some(Command::Update { check }) => {
+                commands::update::run_update(check).map_err(anyhow::Error::msg)
+            }
         }
     }
 }

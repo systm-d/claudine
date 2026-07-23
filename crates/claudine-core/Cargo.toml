@@ -18,6 +18,8 @@ flate2.workspace = true
 ratatui.workspace = true
 clap.workspace = true
 anyhow.workspace = true
+ureq.workspace = true
+self-replace.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
