@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::app::{App, BrowseView, DeleteKind, Focus, PickerMode, PurgeScope, Section};
-use crate::tui::app::{MktJob, human_size, humanize_path};
+use crate::tui::app::{MIN_CONTENT_QUERY, MktJob, human_size, humanize_path};
 use crate::tui::hooks_editor::{HookEdit, HooksLevel, KNOWN_EVENTS};
 use crate::tui::marketplaces::MktMode;
 use crate::tui::marketplaces::PluginCatalog;
@@ -273,23 +273,40 @@ fn render_lists(app: &mut App, f: &mut Frame, area: Rect) {
             p.sessions
                 .iter()
                 .map(|s| {
-                    let short = s.id.chars().take(8).collect::<String>();
                     let last = s.last_ts.clone().unwrap_or_else(|| "—".to_string());
-                    ListItem::new(Line::from(vec![
-                        Span::styled(
-                            short,
-                            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            format!("  {} msg", s.message_count),
-                            Style::default().fg(Color::Gray),
-                        ),
-                        Span::styled(format!("  {last}"), Style::default().fg(DIM)),
-                        Span::styled(
-                            format!("  {}", human_size(s.size)),
-                            Style::default().fg(DIM),
-                        ),
-                    ]))
+                    // Colonne de tête : le titre (renommage / résumé) s'il
+                    // existe, sinon l'id court. Le titre peut être long : on le
+                    // tronque pour laisser la place aux métadonnées.
+                    let mut spans = Vec::new();
+                    match &s.title {
+                        Some(t) if !t.trim().is_empty() => {
+                            let shown = truncate_right(t, 40);
+                            spans.push(Span::styled(
+                                shown,
+                                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                            ));
+                            spans.push(Span::styled(
+                                format!("  {}", s.id.chars().take(8).collect::<String>()),
+                                Style::default().fg(DIM),
+                            ));
+                        }
+                        _ => {
+                            spans.push(Span::styled(
+                                s.id.chars().take(8).collect::<String>(),
+                                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                            ));
+                        }
+                    }
+                    spans.push(Span::styled(
+                        format!("  {} msg", s.message_count),
+                        Style::default().fg(Color::Gray),
+                    ));
+                    spans.push(Span::styled(format!("  {last}"), Style::default().fg(DIM)));
+                    spans.push(Span::styled(
+                        format!("  {}", human_size(s.size)),
+                        Style::default().fg(DIM),
+                    ));
+                    ListItem::new(Line::from(spans))
                 })
                 .collect::<Vec<_>>()
         })
@@ -1215,7 +1232,11 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
     let count = if s.query.trim().is_empty() {
         String::new()
     } else {
-        let kind = if s.deep { "contenu" } else { "chemin/id" };
+        let kind = if s.deep {
+            "contenu"
+        } else {
+            "nom / chemin / id"
+        };
         format!("   {} résultat(s) · {kind}", s.results.len())
     };
     f.render_widget(
@@ -1234,7 +1255,9 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
     if s.query.trim().is_empty() {
         f.render_widget(
             Paragraph::new(Span::styled(
-                "  Tapez pour filtrer par chemin / id (en direct). Tab ou Entrée : chercher dans le contenu.",
+                format!(
+                    "  Tapez pour filtrer par nom / chemin / id. Dès {MIN_CONTENT_QUERY} caractères, le contenu des sessions est cherché en direct."
+                ),
                 Style::default().fg(DIM),
             )),
             rows[1],
@@ -1242,11 +1265,15 @@ fn render_search(app: &App, f: &mut Frame, area: Rect) {
         return;
     }
     if s.results.is_empty() {
+        let hint = if s.query.chars().count() < MIN_CONTENT_QUERY {
+            format!(
+                "  Aucun résultat par nom / chemin / id. Tapez {MIN_CONTENT_QUERY} caractères (ou Tab) pour chercher dans le contenu."
+            )
+        } else {
+            "  Aucun résultat, y compris dans le contenu des sessions.".to_string()
+        };
         f.render_widget(
-            Paragraph::new(Span::styled(
-                "  Aucun résultat par chemin / id. Tab ou Entrée : chercher dans le contenu des sessions.",
-                Style::default().fg(DIM),
-            )),
+            Paragraph::new(Span::styled(hint, Style::default().fg(DIM))),
             rows[1],
         );
         return;
@@ -1958,6 +1985,19 @@ fn truncate_left(s: &str, max: usize) -> String {
     }
     let tail: String = s.chars().skip(count - (max - 1)).collect();
     format!("…{tail}")
+}
+
+/// Tronque par la droite en gardant le début, avec une ellipse en fin.
+fn truncate_right(s: &str, max: usize) -> String {
+    let count = s.chars().count();
+    if count <= max {
+        return s.to_string();
+    }
+    if max <= 1 {
+        return "…".to_string();
+    }
+    let head: String = s.chars().take(max - 1).collect();
+    format!("{head}…")
 }
 
 /// Rectangle centré de taille fixe (en cellules), borné à `area`.

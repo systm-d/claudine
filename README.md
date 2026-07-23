@@ -28,8 +28,12 @@ et extensions (hooks, plugins, serveurs MCP).
   CI.
 - **Multi-home** — plusieurs installations Claude côte à côte (`~/.claude`,
   `~/.claude-perso`, …) ; vue agrégée repliable ou home ciblée.
-- **Recherche live** — filtre sur chemin/identifiant ou contenu des sessions
-  (touche `/`, puis `Tab` pour basculer).
+- **Sessions nommées** — la liste affiche le titre de la session (renommage ou
+  résumé enregistré par Claude Code) quand il existe, avec l'identifiant court
+  en repère ; à défaut, l'identifiant seul.
+- **Recherche live** — filtre sur nom/chemin/identifiant, puis cherche dans le
+  contenu des sessions au fur et à mesure de la frappe dès 3 caractères (touche
+  `/` ; `Tab` force la recherche de contenu même pour une requête plus courte).
 - **Ménage & corbeille** — suppression récupérable des sessions et des projets ;
   restauration, suppression définitive ou vidage depuis le TUI.
 - **Export / Import** — bundle `.tar.gz` horodaté avec manifeste ; remap des
@@ -155,7 +159,7 @@ claudine
 | `Enter`            | Ouvrir la session sélectionnée                              |
 | `Espace`           | Replier / déplier le home courant (vue agrégée)             |
 | `z`                | Tout replier / tout déplier (vue agrégée)                   |
-| `/`                | Rechercher (live chemin/id · `Tab` = contenu)               |
+| `/`                | Rechercher (live nom/chemin/id · contenu dès 3 caractères)  |
 | `d` / `Suppr`      | Envoyer en corbeille : session (Projets) ou projet (Projets)|
 | `m`                | Déplacer la session vers un autre projet                    |
 | `c`                | Corbeille : restaurer / supprimer définitivement / vider    |

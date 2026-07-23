@@ -116,6 +116,12 @@ pub struct MoveTarget {
     pub home_base: PathBuf,
 }
 
+/// Longueur minimale (en caractères) de la requête à partir de laquelle la
+/// recherche dans le contenu des sessions se déclenche automatiquement à
+/// chaque frappe. En dessous, on se limite au filtrage nom / chemin / id pour
+/// éviter de lire tous les fichiers sur une requête trop large.
+pub const MIN_CONTENT_QUERY: usize = 3;
+
 /// Un résultat de recherche : pointe vers une session des projets chargés.
 #[derive(Debug, Clone)]
 pub struct SearchHit {
@@ -126,13 +132,14 @@ pub struct SearchHit {
 }
 
 /// État de la recherche : requête éditable + résultats recalculés en direct.
-/// La frappe filtre instantanément sur le **chemin / id** ; `Tab` lance une
-/// recherche **dans le contenu** (lecture des fichiers, plus coûteuse).
+/// La frappe filtre sur **nom / chemin / id** ; dès [`MIN_CONTENT_QUERY`]
+/// caractères la recherche **dans le contenu** se déclenche en direct (`Tab`
+/// la force aussi pour une requête plus courte).
 pub struct SearchState {
     pub query: String,
     pub results: Vec<SearchHit>,
     pub idx: usize,
-    /// Vrai si les résultats incluent une recherche de contenu (via `Tab`).
+    /// Vrai si les résultats incluent une recherche de contenu.
     pub deep: bool,
 }
 
@@ -1721,23 +1728,28 @@ impl App {
             let proj_label = humanize_path(p.cwd.as_deref().unwrap_or(&p.encoded_name));
             let proj_lc = proj_label.to_lowercase();
             for (si, sess) in p.sessions.iter().enumerate() {
-                let meta_hit = proj_lc.contains(query) || sess.id.to_lowercase().contains(query);
+                let title_hit = sess
+                    .title
+                    .as_deref()
+                    .is_some_and(|t| t.to_lowercase().contains(query));
+                let meta_hit =
+                    proj_lc.contains(query) || sess.id.to_lowercase().contains(query) || title_hit;
                 let snippet = if deep {
                     match find_in_session(&sess.path, query) {
                         Some(snip) => snip,
-                        None if meta_hit => "(chemin / id)".to_string(),
+                        None if meta_hit => "(nom / chemin / id)".to_string(),
                         None => continue,
                     }
                 } else if meta_hit {
-                    "(chemin / id)".to_string()
+                    "(nom / chemin / id)".to_string()
                 } else {
                     continue;
                 };
-                let id8: String = sess.id.chars().take(8).collect();
+                let head = sess.display_label();
                 results.push(SearchHit {
                     project_idx: pi,
                     session_idx: si,
-                    label: format!("{id8}  {proj_label}"),
+                    label: format!("{head}  {proj_label}"),
                     snippet,
                 });
             }
@@ -1745,22 +1757,27 @@ impl App {
         results
     }
 
-    /// Filtre en direct (chemin + id) à chaque frappe ; instantané même avec
-    /// des centaines de sessions car aucun fichier n'est lu.
+    /// Recalcule les résultats à chaque frappe. En deçà de
+    /// [`MIN_CONTENT_QUERY`] caractères, on filtre seulement sur le nom / chemin
+    /// / id (instantané, aucun fichier lu). À partir de ce seuil, la recherche
+    /// dans le **contenu** se déclenche en direct (« au fur et à mesure »).
     pub fn search_recompute(&mut self) {
         let query = match &self.search {
             Some(s) => s.query.trim().to_lowercase(),
             None => return,
         };
+        // Le seuil se mesure en caractères (et non en octets) pour rester
+        // correct avec l'UTF-8.
+        let deep = query.chars().count() >= MIN_CONTENT_QUERY;
         let results = if query.is_empty() {
             Vec::new()
         } else {
-            self.collect_hits(&query, false)
+            self.collect_hits(&query, deep)
         };
         if let Some(s) = &mut self.search {
             s.results = results;
             s.idx = 0;
-            s.deep = false;
+            s.deep = deep;
         }
     }
 
@@ -2783,7 +2800,7 @@ mod tests {
     }
 
     #[test]
-    fn search_live_filters_by_path_without_reading_content() {
+    fn short_query_filters_by_path_without_reading_content() {
         let dir = tempfile::tempdir().unwrap();
         let pdir = dir.path().join("projects").join("-home-x-alpha");
         fs::create_dir_all(&pdir).unwrap();
@@ -2796,22 +2813,22 @@ mod tests {
         let mut app = App::with_homes(vec![home]);
 
         app.open_search();
-        for c in "alpha".chars() {
+        // Sous le seuil (2 car.) : filtrage nom/chemin/id, sans lecture du contenu.
+        for c in "al".chars() {
             app.search_input_char(c);
         }
-        // Filtrage live par chemin, sans recherche profonde.
         assert!(!app.search.as_ref().unwrap().deep);
         assert_eq!(app.search.as_ref().unwrap().results.len(), 1);
 
         // Effacer la requête vide les résultats.
-        for _ in 0..5 {
+        for _ in 0..2 {
             app.search_input_backspace();
         }
         assert!(app.search.as_ref().unwrap().results.is_empty());
     }
 
     #[test]
-    fn search_finds_and_opens_session() {
+    fn live_content_search_kicks_in_at_threshold() {
         let dir = tempfile::tempdir().unwrap();
         let pdir = dir.path().join("projects").join("-home-x");
         fs::create_dir_all(&pdir).unwrap();
@@ -2824,16 +2841,19 @@ mod tests {
         let mut app = App::with_homes(vec![home]);
 
         app.open_search();
-        for c in "widget".chars() {
+        // Sous le seuil : le mot du contenu n'est pas encore cherché.
+        for c in "wi".chars() {
             app.search_input_char(c);
         }
-        // Le contenu n'est trouvé qu'avec la recherche profonde (Tab).
+        assert!(!app.search.as_ref().unwrap().deep);
+        assert!(app.search.as_ref().unwrap().results.is_empty());
+
+        // Au 3e caractère, la recherche de contenu se déclenche en direct.
+        app.search_input_char('d');
         assert!(
-            app.search.as_ref().unwrap().results.is_empty(),
-            "live = chemin/id seulement"
+            app.search.as_ref().unwrap().deep,
+            "recherche live du contenu"
         );
-        app.search_deep();
-        assert!(app.search.as_ref().unwrap().deep);
         assert_eq!(app.search.as_ref().unwrap().results.len(), 1);
 
         app.search_open_selected();
@@ -2857,10 +2877,11 @@ mod tests {
         let mut app = App::with_homes(vec![home]);
 
         app.open_search();
-        for c in "widget".chars() {
+        // Requête courte (sous le seuil) absente du chemin/id : reste superficielle.
+        for c in "wi".chars() {
             app.search_input_char(c);
         }
-        // Le filtre live (chemin/id) ne trouve rien pour un mot du contenu.
+        assert!(!app.search.as_ref().unwrap().deep);
         assert!(app.search.as_ref().unwrap().results.is_empty());
 
         // Entrée doit basculer sur la recherche de contenu, pas fermer la fenêtre.
@@ -2873,6 +2894,34 @@ mod tests {
         app.search_open_selected();
         assert!(app.search.is_none());
         assert_eq!(app.browse_view, BrowseView::Transcript);
+    }
+
+    #[test]
+    fn search_matches_session_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdir = dir.path().join("projects").join("-home-x");
+        fs::create_dir_all(&pdir).unwrap();
+        fs::write(
+            pdir.join("aaaa.jsonl"),
+            concat!(
+                r#"{"type":"summary","summary":"Refonte du parseur","leafUuid":"u1"}"#,
+                "\n",
+                r#"{"type":"user","cwd":"/home/x","uuid":"u1","message":{"content":"zzz"}}"#,
+            ),
+        )
+        .unwrap();
+        let home = ClaudeHome::from_base(dir.path());
+        let mut app = App::with_homes(vec![home]);
+
+        app.open_search();
+        // « parseur » n'apparaît que dans le titre (pas dans le chemin/id ni le
+        // contenu) : la correspondance doit venir du nom de session.
+        for c in "parseur".chars() {
+            app.search_input_char(c);
+        }
+        let s = app.search.as_ref().unwrap();
+        assert_eq!(s.results.len(), 1);
+        assert!(s.results[0].label.contains("Refonte du parseur"));
     }
 
     #[test]
