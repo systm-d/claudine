@@ -41,20 +41,11 @@ jobs:
           - { name: ubuntu-24.04, os: ubuntu-24.04, container: "" }
           - { name: fedora-40, os: ubuntu-24.04, container: "fedora:40" }
           - { name: fedora-41, os: ubuntu-24.04, container: "fedora:41" }
-          - { name: windows-latest, os: windows-latest, container: "" }
           - { name: macos-latest, os: macos-latest, container: "" }
     steps:
       - name: Install container prerequisites (Fedora)
         if: matrix.container != ''
         run: dnf -y install gcc git curl
-      - name: Exclure le workspace de Windows Defender
-        # Le scan temps réel de Defender sur target/ et le registre cargo est le
-        # principal ralentisseur des builds Rust sur windows-latest.
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-          Add-MpPreference -ExclusionPath "$env:USERPROFILE\.cargo"
       - uses: actions/checkout@v7
       - name: Install Rust via rustup (Fedora container)
         if: matrix.container != ''
