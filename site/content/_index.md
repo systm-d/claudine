@@ -52,6 +52,12 @@ cta2 = "Install"
 <section class="missions">
 <h2>Six things it does for you</h2>
 <p class="section-lede">Not a list of buttons — the jobs you actually reach for.</p>
+<figure class="missions-art">
+<picture>
+<source srcset="missions.webp" type="image/webp">
+<img src="missions.png" width="1200" height="800" alt="Claudine, surrounded by its six missions as floating panels" loading="lazy">
+</picture>
+</figure>
 <div class="grid">
 
 <div class="mission">

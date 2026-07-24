@@ -43,7 +43,11 @@ a { color: var(--brand); }
 }
 .langswitch a:hover { color: var(--fg); }
 .langswitch a.on { color: var(--brand); border-color: var(--line); }
-.logo { color: var(--brand); width: 118px; height: auto; display: block; margin: 0 auto 1.9rem; }
+.hero-art {
+  display: block; width: 100%; max-width: 34rem; height: auto;
+  margin: .4rem auto 1.6rem;
+  filter: drop-shadow(0 22px 46px rgba(0, 0, 0, .55));
+}
 .hero h1 {
   font-size: clamp(1.9rem, 4.5vw, 3rem);
   line-height: 1.1;
@@ -127,6 +131,13 @@ section > h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
 .cmds .cmt { color: var(--dim); }
 
 /* ---------- Missions ---------- */
+.missions-art {
+  margin: -1rem auto 1.4rem; max-width: 48rem;
+}
+.missions-art img {
+  display: block; width: 100%; height: auto;
+  filter: drop-shadow(0 20px 44px rgba(0, 0, 0, .5));
+}
 .missions .grid {
   display: grid; gap: 1rem;
   grid-template-columns: repeat(auto-fit, minmax(16.5rem, 1fr));

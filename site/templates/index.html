@@ -8,50 +8,11 @@
       <a href="{{ get_url(path='/') }}"{% if lang == 'en' %} class="on" aria-current="true"{% endif %}>EN</a>
     </nav>
   </div>
-  <svg class="logo" viewBox="0 0 9 6" width="128" role="img" aria-label="Mascotte Claudine" shape-rendering="crispEdges">
-    <g fill="#d97757">
-      <rect x="2" y="0" width="1" height="1"/>
-      <rect x="3" y="0" width="1" height="1"/>
-      <rect x="4" y="0" width="1" height="1"/>
-      <rect x="5" y="0" width="1" height="1"/>
-      <rect x="6" y="0" width="1" height="1"/>
-      <rect x="1" y="1" width="1" height="1"/>
-      <rect x="2" y="1" width="1" height="1"/>
-      <rect x="3" y="1" width="1" height="1"/>
-      <rect x="4" y="1" width="1" height="1"/>
-      <rect x="5" y="1" width="1" height="1"/>
-      <rect x="6" y="1" width="1" height="1"/>
-      <rect x="7" y="1" width="1" height="1"/>
-      <rect x="1" y="2" width="1" height="1"/>
-      <rect x="3" y="2" width="1" height="1"/>
-      <rect x="4" y="2" width="1" height="1"/>
-      <rect x="5" y="2" width="1" height="1"/>
-      <rect x="7" y="2" width="1" height="1"/>
-      <rect x="2" y="3" width="1" height="1"/>
-      <rect x="3" y="3" width="1" height="1"/>
-      <rect x="4" y="3" width="1" height="1"/>
-      <rect x="5" y="3" width="1" height="1"/>
-      <rect x="6" y="3" width="1" height="1"/>
-      <rect x="1" y="4" width="1" height="1"/>
-      <rect x="2" y="4" width="1" height="1"/>
-      <rect x="3" y="4" width="1" height="1"/>
-      <rect x="4" y="4" width="1" height="1"/>
-      <rect x="5" y="4" width="1" height="1"/>
-      <rect x="6" y="4" width="1" height="1"/>
-      <rect x="7" y="4" width="1" height="1"/>
-      <rect x="2" y="5" width="1" height="1"/>
-      <rect x="4" y="5" width="1" height="1"/>
-      <rect x="6" y="5" width="1" height="1"/>
-    </g>
-    <g fill="#ece6e0">
-      <rect x="2" y="2" width="1" height="1"/>
-      <rect x="6" y="2" width="1" height="1"/>
-    </g>
-    <g fill="#d9534f">
-      <rect x="1" y="3" width="1" height="1"/>
-      <rect x="7" y="3" width="1" height="1"/>
-    </g>
-  </svg>
+  <picture>
+    <source srcset="{{ get_url(path='hero.webp') }}" type="image/webp">
+    <img class="hero-art" src="{{ get_url(path='hero.png') }}" width="1200" height="800"
+         alt="Claude Code and Claudine as two caped heroes, side by side" fetchpriority="high">
+  </picture>
   <h1>{{ section.extra.tagline }}</h1>
   <p class="lede">{{ section.extra.lede }}</p>
   <div class="cta">
