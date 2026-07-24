@@ -1,7 +1,7 @@
 +++
 [extra]
 tagline = "Manage your Claude Code data without leaving the terminal."
-lede = "Sessions, memory, configuration, extensions and marketplaces — a Rust TUI that reads and writes ~/.claude safely."
+lede = "Sessions, memory, configuration, extensions, usage stats and marketplaces — a Rust TUI that reads and writes ~/.claude safely."
 cta = "View on GitHub"
 cta2 = "Install"
 +++
@@ -13,7 +13,7 @@ cta2 = "Install"
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">claudine — ~/.claude</span></div>
 <div class="term-body">
 <div class="tui">
-<div class="tui-head"><span class="tui-brand">Claudine</span><span class="tabs"><span class="tab active">Projects</span><span class="tab">Memory</span><span class="tab">Config</span><span class="tab">Extensions</span></span><span class="tui-home">2 homes</span></div>
+<div class="tui-head"><span class="tui-brand">Claudine</span><span class="tabs"><span class="tab active">Projects</span><span class="tab">Memory</span><span class="tab">Config</span><span class="tab">Extensions</span><span class="tab">Usage</span></span><span class="tui-home">2 homes</span></div>
 <div class="tui-panels">
 <div class="tui-col"><div class="col-title">Projects</div><div class="row sel">▸ delfour.co/system</div><div class="row">levilainpetit.dev</div><div class="row">dotfiles</div><div class="row dim">+ 4 more…</div></div>
 <div class="tui-col grow"><div class="col-title">Sessions</div><div class="row sel">▸ <span class="mark">refactor core</span> <span class="dim">a1b2c3d4 · 142 msgs · 2026-07-22 17:24</span></div><div class="row">fix marketplaces install <span class="dim">7f3e0c11 · 88 msgs · 2026-07-21 09:12</span></div><div class="row">exact TUI logo <span class="dim">2b9dd4a6 · 41 msgs · 2026-07-19 18:44</span></div><div class="row">export .tar.gz bundle <span class="dim">c0771e9f · 63 msgs · 2026-07-17 11:07</span></div></div>
@@ -26,7 +26,7 @@ cta2 = "Install"
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">claudine — extensions</span></div>
 <div class="term-body">
 <div class="tui">
-<div class="tui-head"><span class="tui-brand">Claudine</span><span class="tabs"><span class="tab">Projects</span><span class="tab">Memory</span><span class="tab">Config</span><span class="tab active">Extensions</span></span></div>
+<div class="tui-head"><span class="tui-brand">Claudine</span><span class="tabs"><span class="tab">Projects</span><span class="tab">Memory</span><span class="tab">Config</span><span class="tab active">Extensions</span><span class="tab">Usage</span></span></div>
 <div class="tui-panels">
 <div class="tui-col grow"><div class="col-title">Hooks · 3</div><div class="row"><span class="ev">PreToolUse</span> bash → <span class="dim">./guard.sh</span></div><div class="row"><span class="ev">PostToolUse</span> edit → <span class="dim">prettier --write</span></div><div class="col-title" style="margin-top:.7rem">Plugins · 5</div><div class="row"><span class="on">✓</span> superpowers <span class="dim">@official</span></div><div class="row"><span class="on">✓</span> rtk-tools <span class="dim">@systm-d</span></div><div class="row"><span class="off">○</span> notion-mcp <span class="dim">@community</span></div></div>
 <div class="tui-col"><div class="col-title">MCP servers · 2</div><div class="row"><span class="mark">●</span> github <span class="dim">stdio</span></div><div class="row"><span class="mark">●</span> filesystem <span class="dim">stdio</span></div></div>
@@ -47,7 +47,9 @@ cta2 = "Install"
 <div class="card"><h3>Configuration</h3><p>Edit settings.json with atomic writes and timestamped backups.</p></div>
 <div class="card"><h3>Extensions</h3><p>Hooks, MCP servers and plugins: read, edit, enable.</p></div>
 <div class="card"><h3>Marketplaces</h3><p>Add marketplaces and install plugins from the catalog.</p></div>
+<div class="card"><h3>Usage stats</h3><p>Tokens and estimated cost per model, plus a GitHub-style daily activity heatmap; per-session breakdown.</p></div>
 <div class="card"><h3>Import / Export</h3><p>Signed .tar.gz bundles, path remapping, dry-run, secret exclusion.</p></div>
+<div class="card"><h3>Self-update</h3><p><code>claudine update</code> fetches and installs the latest GitHub release for your platform.</p></div>
 </div>
 </section>
 
@@ -65,6 +67,8 @@ cta2 = "Install"
 <div class="out">Report: 128 sessions · 12 projects — Bundle written</div>
 <div class="line"><span class="prompt">$</span>claudine import backup.tar.gz <span class="flag">--map</span> /old=/new <span class="flag">--dry-run</span></div>
 <div class="out">(dry-run: nothing was written)</div>
+<div class="line"><span class="prompt">$</span>claudine update <span class="flag">--check</span></div>
+<div class="out">Update available: 0.1.2 → 0.1.3</div>
 </div>
 </div>
 </section>
