@@ -15,6 +15,11 @@
 <body>
   {% block content %}{% endblock %}
   <footer class="footer">
+    <picture>
+      <source srcset="{{ get_url(path='footer.webp') }}" type="image/webp">
+      <img class="footer-art" src="{{ get_url(path='footer.png') }}" width="1300" height="867"
+           alt="Claudine kicking back at the desk — ~/.claude under control" loading="lazy">
+    </picture>
     <span>Claudine · local-first · open source ·
       <a href="{{ config.extra.repo_url }}">GitHub</a></span>
   </footer>
