@@ -1,47 +1,103 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" shape-rendering="crispEdges" role="img" aria-label="Claudine">
-  <rect width="32" height="32" rx="7" fill="#14110f"/>
-  <g transform="translate(7 10) scale(2)">
-    <g fill="#d97757">
-      <rect x="2" y="0" width="1" height="1"/>
-      <rect x="3" y="0" width="1" height="1"/>
-      <rect x="4" y="0" width="1" height="1"/>
-      <rect x="5" y="0" width="1" height="1"/>
-      <rect x="6" y="0" width="1" height="1"/>
-      <rect x="1" y="1" width="1" height="1"/>
-      <rect x="2" y="1" width="1" height="1"/>
-      <rect x="3" y="1" width="1" height="1"/>
-      <rect x="4" y="1" width="1" height="1"/>
-      <rect x="5" y="1" width="1" height="1"/>
-      <rect x="6" y="1" width="1" height="1"/>
-      <rect x="7" y="1" width="1" height="1"/>
-      <rect x="1" y="2" width="1" height="1"/>
-      <rect x="3" y="2" width="1" height="1"/>
-      <rect x="4" y="2" width="1" height="1"/>
-      <rect x="5" y="2" width="1" height="1"/>
-      <rect x="7" y="2" width="1" height="1"/>
-      <rect x="2" y="3" width="1" height="1"/>
-      <rect x="3" y="3" width="1" height="1"/>
-      <rect x="4" y="3" width="1" height="1"/>
-      <rect x="5" y="3" width="1" height="1"/>
-      <rect x="6" y="3" width="1" height="1"/>
-      <rect x="1" y="4" width="1" height="1"/>
-      <rect x="2" y="4" width="1" height="1"/>
-      <rect x="3" y="4" width="1" height="1"/>
-      <rect x="4" y="4" width="1" height="1"/>
-      <rect x="5" y="4" width="1" height="1"/>
-      <rect x="6" y="4" width="1" height="1"/>
-      <rect x="7" y="4" width="1" height="1"/>
-      <rect x="2" y="5" width="1" height="1"/>
-      <rect x="4" y="5" width="1" height="1"/>
-      <rect x="6" y="5" width="1" height="1"/>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><metadata><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Description><dc:creator>RealFaviconGenerator</dc:creator><dc:source>https://realfavicongenerator.net</dc:source></rdf:Description></rdf:RDF></metadata><style>
+    #light-icon {
+      display: inline;
+    }
+    #dark-icon {
+      display: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      #light-icon {
+        display: none;
+      }
+      #dark-icon {
+        display: inline;
+      }
+    }
+  </style><g id="light-icon"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><g clip-path="url(#SvgjsClipPath1124)"><rect width="1000" height="1000" fill="#14110f"></rect><g transform="matrix(25,0,0,25,100,100)"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 32 32" width="32" height="32" shape-rendering="crispEdges" role="img" aria-label="Claudine" id="svg38" sodipodi:docname="favicon.svg" inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:svg="http://www.w3.org/2000/svg"><defs id="defs38"><clipPath id="SvgjsClipPath1124"><rect width="1000" height="1000" x="0" y="0" rx="400" ry="400"></rect></clipPath></defs><sodipodi:namedview id="namedview38" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25" inkscape:showpageshadow="2" inkscape:pageopacity="0.0" inkscape:pagecheckerboard="0" inkscape:deskcolor="#d1d1d1" inkscape:zoom="25.09375" inkscape:cx="15.980075" inkscape:cy="15.521793" inkscape:window-width="1920" inkscape:window-height="1011" inkscape:window-x="0" inkscape:window-y="0" inkscape:window-maximized="1" inkscape:current-layer="svg38"></sodipodi:namedview><rect width="32" height="32" rx="1.8194271" fill="#14110f" id="rect1" x="0" y="0"></rect><g transform="matrix(3.998221,0,0,4.2714819,-2.1713218,2.8268996)" id="g38">
+    <g fill="#d97757" id="g33">
+      <rect x="2" y="0" width="1" height="1" id="rect2"></rect>
+      <rect x="3" y="0" width="1" height="1" id="rect3"></rect>
+      <rect x="4" y="0" width="1" height="1" id="rect4"></rect>
+      <rect x="5" y="0" width="1" height="1" id="rect5"></rect>
+      <rect x="6" y="0" width="1" height="1" id="rect6"></rect>
+      <rect x="1" y="1" width="1" height="1" id="rect7"></rect>
+      <rect x="2" y="1" width="1" height="1" id="rect8"></rect>
+      <rect x="3" y="1" width="1" height="1" id="rect9"></rect>
+      <rect x="4" y="1" width="1" height="1" id="rect10"></rect>
+      <rect x="5" y="1" width="1" height="1" id="rect11"></rect>
+      <rect x="6" y="1" width="1" height="1" id="rect12"></rect>
+      <rect x="7" y="1" width="1" height="1" id="rect13"></rect>
+      <rect x="1" y="2" width="1" height="1" id="rect14"></rect>
+      <rect x="3" y="2" width="1" height="1" id="rect15"></rect>
+      <rect x="4" y="2" width="1" height="1" id="rect16"></rect>
+      <rect x="5" y="2" width="1" height="1" id="rect17"></rect>
+      <rect x="7" y="2" width="1" height="1" id="rect18"></rect>
+      <rect x="2" y="3" width="1" height="1" id="rect19"></rect>
+      <rect x="3" y="3" width="1" height="1" id="rect20"></rect>
+      <rect x="4" y="3" width="1" height="1" id="rect21"></rect>
+      <rect x="5" y="3" width="1" height="1" id="rect22"></rect>
+      <rect x="6" y="3" width="1" height="1" id="rect23"></rect>
+      <rect x="1" y="4" width="1" height="1" id="rect24"></rect>
+      <rect x="2" y="4" width="1" height="1" id="rect25"></rect>
+      <rect x="3" y="4" width="1" height="1" id="rect26"></rect>
+      <rect x="4" y="4" width="1" height="1" id="rect27"></rect>
+      <rect x="5" y="4" width="1" height="1" id="rect28"></rect>
+      <rect x="6" y="4" width="1" height="1" id="rect29"></rect>
+      <rect x="7" y="4" width="1" height="1" id="rect30"></rect>
+      <rect x="2" y="5" width="1" height="1" id="rect31"></rect>
+      <rect x="4" y="5" width="1" height="1" id="rect32"></rect>
+      <rect x="6" y="5" width="1" height="1" id="rect33"></rect>
     </g>
-    <g fill="#ece6e0">
-      <rect x="2" y="2" width="1" height="1"/>
-      <rect x="6" y="2" width="1" height="1"/>
+    <g fill="#ece6e0" id="g35">
+      <rect x="2" y="2" width="1" height="1" id="rect34"></rect>
+      <rect x="6" y="2" width="1" height="1" id="rect35"></rect>
     </g>
-    <g fill="#d9534f">
-      <rect x="1" y="3" width="1" height="1"/>
-      <rect x="7" y="3" width="1" height="1"/>
+    <g fill="#d9534f" id="g37">
+      <rect x="1" y="3" width="1" height="1" id="rect36"></rect>
+      <rect x="7" y="3" width="1" height="1" id="rect37"></rect>
     </g>
-  </g>
-</svg>
+  </g></svg></g></g></svg></g><g id="dark-icon"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><g clip-path="url(#SvgjsClipPath1125)"><rect width="1000" height="1000" fill="#14110f"></rect><g transform="matrix(25,0,0,25,100,100)"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 32 32" width="32" height="32" shape-rendering="crispEdges" role="img" aria-label="Claudine" id="svg38" sodipodi:docname="favicon.svg" inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:svg="http://www.w3.org/2000/svg"><defs id="defs38"><clipPath id="SvgjsClipPath1125"><rect width="1000" height="1000" x="0" y="0" rx="350" ry="350"></rect></clipPath></defs><sodipodi:namedview id="namedview38" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25" inkscape:showpageshadow="2" inkscape:pageopacity="0.0" inkscape:pagecheckerboard="0" inkscape:deskcolor="#d1d1d1" inkscape:zoom="25.09375" inkscape:cx="15.980075" inkscape:cy="15.521793" inkscape:window-width="1920" inkscape:window-height="1011" inkscape:window-x="0" inkscape:window-y="0" inkscape:window-maximized="1" inkscape:current-layer="svg38"></sodipodi:namedview><rect width="32" height="32" rx="1.8194271" fill="#14110f" id="rect1" x="0" y="0"></rect><g transform="matrix(3.998221,0,0,4.2714819,-2.1713218,2.8268996)" id="g38">
+    <g fill="#d97757" id="g33">
+      <rect x="2" y="0" width="1" height="1" id="rect2"></rect>
+      <rect x="3" y="0" width="1" height="1" id="rect3"></rect>
+      <rect x="4" y="0" width="1" height="1" id="rect4"></rect>
+      <rect x="5" y="0" width="1" height="1" id="rect5"></rect>
+      <rect x="6" y="0" width="1" height="1" id="rect6"></rect>
+      <rect x="1" y="1" width="1" height="1" id="rect7"></rect>
+      <rect x="2" y="1" width="1" height="1" id="rect8"></rect>
+      <rect x="3" y="1" width="1" height="1" id="rect9"></rect>
+      <rect x="4" y="1" width="1" height="1" id="rect10"></rect>
+      <rect x="5" y="1" width="1" height="1" id="rect11"></rect>
+      <rect x="6" y="1" width="1" height="1" id="rect12"></rect>
+      <rect x="7" y="1" width="1" height="1" id="rect13"></rect>
+      <rect x="1" y="2" width="1" height="1" id="rect14"></rect>
+      <rect x="3" y="2" width="1" height="1" id="rect15"></rect>
+      <rect x="4" y="2" width="1" height="1" id="rect16"></rect>
+      <rect x="5" y="2" width="1" height="1" id="rect17"></rect>
+      <rect x="7" y="2" width="1" height="1" id="rect18"></rect>
+      <rect x="2" y="3" width="1" height="1" id="rect19"></rect>
+      <rect x="3" y="3" width="1" height="1" id="rect20"></rect>
+      <rect x="4" y="3" width="1" height="1" id="rect21"></rect>
+      <rect x="5" y="3" width="1" height="1" id="rect22"></rect>
+      <rect x="6" y="3" width="1" height="1" id="rect23"></rect>
+      <rect x="1" y="4" width="1" height="1" id="rect24"></rect>
+      <rect x="2" y="4" width="1" height="1" id="rect25"></rect>
+      <rect x="3" y="4" width="1" height="1" id="rect26"></rect>
+      <rect x="4" y="4" width="1" height="1" id="rect27"></rect>
+      <rect x="5" y="4" width="1" height="1" id="rect28"></rect>
+      <rect x="6" y="4" width="1" height="1" id="rect29"></rect>
+      <rect x="7" y="4" width="1" height="1" id="rect30"></rect>
+      <rect x="2" y="5" width="1" height="1" id="rect31"></rect>
+      <rect x="4" y="5" width="1" height="1" id="rect32"></rect>
+      <rect x="6" y="5" width="1" height="1" id="rect33"></rect>
+    </g>
+    <g fill="#ece6e0" id="g35">
+      <rect x="2" y="2" width="1" height="1" id="rect34"></rect>
+      <rect x="6" y="2" width="1" height="1" id="rect35"></rect>
+    </g>
+    <g fill="#d9534f" id="g37">
+      <rect x="1" y="3" width="1" height="1" id="rect36"></rect>
+      <rect x="7" y="3" width="1" height="1" id="rect37"></rect>
+    </g>
+  </g></svg></g></g></svg></g></svg>
