@@ -240,6 +240,11 @@ section > h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
   max-width: 62rem; margin: 3rem auto 2.5rem; padding: 1.5rem 1.25rem 0;
   border-top: 1px solid var(--line); color: var(--muted); text-align: center; font-size: .9rem;
 }
+.footer-art {
+  display: block; width: 100%; max-width: 42rem; height: auto;
+  margin: 1.4rem auto 2rem;
+  filter: drop-shadow(0 20px 44px rgba(0, 0, 0, .5));
+}
 
 @media (max-width: 1000px) {
   .flow { flex-direction: column; }
