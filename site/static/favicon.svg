@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" shape-rendering="crispEdges" role="img" aria-label="Claudine">
+  <rect width="32" height="32" rx="7" fill="#14110f"/>
+  <g transform="translate(7 10) scale(2)">
+    <g fill="#d97757">
+      <rect x="2" y="0" width="1" height="1"/>
+      <rect x="3" y="0" width="1" height="1"/>
+      <rect x="4" y="0" width="1" height="1"/>
+      <rect x="5" y="0" width="1" height="1"/>
+      <rect x="6" y="0" width="1" height="1"/>
+      <rect x="1" y="1" width="1" height="1"/>
+      <rect x="2" y="1" width="1" height="1"/>
+      <rect x="3" y="1" width="1" height="1"/>
+      <rect x="4" y="1" width="1" height="1"/>
+      <rect x="5" y="1" width="1" height="1"/>
+      <rect x="6" y="1" width="1" height="1"/>
+      <rect x="7" y="1" width="1" height="1"/>
+      <rect x="1" y="2" width="1" height="1"/>
+      <rect x="3" y="2" width="1" height="1"/>
+      <rect x="4" y="2" width="1" height="1"/>
+      <rect x="5" y="2" width="1" height="1"/>
+      <rect x="7" y="2" width="1" height="1"/>
+      <rect x="2" y="3" width="1" height="1"/>
+      <rect x="3" y="3" width="1" height="1"/>
+      <rect x="4" y="3" width="1" height="1"/>
+      <rect x="5" y="3" width="1" height="1"/>
+      <rect x="6" y="3" width="1" height="1"/>
+      <rect x="1" y="4" width="1" height="1"/>
+      <rect x="2" y="4" width="1" height="1"/>
+      <rect x="3" y="4" width="1" height="1"/>
+      <rect x="4" y="4" width="1" height="1"/>
+      <rect x="5" y="4" width="1" height="1"/>
+      <rect x="6" y="4" width="1" height="1"/>
+      <rect x="7" y="4" width="1" height="1"/>
+      <rect x="2" y="5" width="1" height="1"/>
+      <rect x="4" y="5" width="1" height="1"/>
+      <rect x="6" y="5" width="1" height="1"/>
+    </g>
+    <g fill="#ece6e0">
+      <rect x="2" y="2" width="1" height="1"/>
+      <rect x="6" y="2" width="1" height="1"/>
+    </g>
+    <g fill="#d9534f">
+      <rect x="1" y="3" width="1" height="1"/>
+      <rect x="7" y="3" width="1" height="1"/>
+    </g>
+  </g>
+</svg>

@@ -6,6 +6,10 @@
   <title>{% block title %}{{ config.title }}{% endblock %}</title>
   <meta name="description" content="{{ config.description }}">
   <meta name="theme-color" content="{{ config.extra.brand_color }}">
+  <link rel="icon" href="{{ get_url(path='favicon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="{{ get_url(path='favicon-32.png') }}" sizes="32x32" type="image/png">
+  <link rel="icon" href="{{ get_url(path='favicon.ico') }}" sizes="any">
+  <link rel="apple-touch-icon" href="{{ get_url(path='apple-touch-icon.png') }}">
   <link rel="stylesheet" href="{{ get_url(path='main.css') }}">
 </head>
 <body>
