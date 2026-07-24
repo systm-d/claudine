@@ -81,16 +81,19 @@ section > h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
 .card p { margin: 0; color: var(--muted); font-size: .95rem; }
 
 /* ---------- Flow diagram (Claude Code → Claudine → you) ---------- */
-.flow-section { margin-top: 2.5rem; text-align: center; }
-.flow-kicker {
-  font: .82rem/1.5 var(--mono); color: var(--muted);
-  letter-spacing: .02em; margin: 0 auto 1.6rem; max-width: 40rem;
+.flow-section { text-align: center; }
+.flow-title { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
+.flow-lede { margin-left: auto; margin-right: auto; }
+.flow {
+  display: flex; flex-flow: row nowrap;
+  align-items: center; justify-content: center; gap: .8rem;
+  margin-top: 1.6rem; padding: 1.9rem 1.5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: .9rem;
 }
-.flow { display: flex; flex-direction: column; align-items: center; gap: .5rem; }
 .flow-node {
   display: flex; flex-direction: column; align-items: center; gap: .12rem;
-  min-width: 13rem; padding: .8rem 1.4rem;
-  background: var(--panel); border: 1px solid var(--line); border-radius: .7rem;
+  flex: none; min-width: 11.5rem; padding: .8rem 1.2rem;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: .7rem;
 }
 .flow-name { font: 600 1rem/1.2 var(--mono); color: var(--fg); }
 .flow-sub { font: .74rem/1.2 var(--mono); color: var(--dim); }
@@ -101,11 +104,11 @@ section > h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
 .flow-node.hub .flow-name { color: var(--brand); }
-.flow-node.you { min-width: 8rem; }
-.flow-arrow { color: var(--brand); font-size: .9rem; line-height: 1; opacity: .8; }
+.flow-node.you { min-width: 7rem; }
+.flow-arrow { color: var(--brand); font-size: 1.2rem; line-height: 1; opacity: .75; flex: none; }
 .flow-chips {
   display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem;
-  max-width: 34rem; margin: .1rem auto;
+  flex: none; max-width: 15rem;
 }
 .chip {
   font: .76rem/1 var(--mono); color: var(--muted);
@@ -227,6 +230,12 @@ section > h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
   border-top: 1px solid var(--line); color: var(--muted); text-align: center; font-size: .9rem;
 }
 
+@media (max-width: 1000px) {
+  .flow { flex-direction: column; }
+  .flow-arrow { transform: rotate(90deg); }
+  .flow-node, .flow-chips { width: 100%; max-width: 22rem; }
+}
+
 @media (max-width: 760px) {
   .why-grid { grid-template-columns: 1fr; }
 }
@@ -236,7 +245,6 @@ section > h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
   .tui-panels { flex-direction: column; gap: .8rem; }
   .tui-col + .tui-col { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; padding-top: .8rem; }
   .row { white-space: normal; }
-  .flow-node { min-width: 0; width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

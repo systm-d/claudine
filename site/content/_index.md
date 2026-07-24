@@ -7,16 +7,17 @@ cta2 = "Install"
 +++
 
 <section class="flow-section">
-<p class="flow-kicker">Claude Code writes the knowledge. Claudine keeps control of it.</p>
+<h2 class="flow-title">Claude Code writes. Claudine hands you back control.</h2>
+<p class="section-lede flow-lede">Everything Claude Code generates lands in <code>~/.claude</code>. Claudine sits between that pile and you — one interface for all of it.</p>
 <div class="flow" aria-label="Claude Code feeds data into Claudine, which gives you one interface">
 <div class="flow-node src"><span class="flow-name">Claude Code</span><span class="flow-sub">writes to ~/.claude</span></div>
-<div class="flow-arrow" aria-hidden="true">▼</div>
+<div class="flow-arrow" aria-hidden="true">→</div>
 <div class="flow-chips">
 <span class="chip">sessions</span><span class="chip">memory</span><span class="chip">projects</span><span class="chip">config</span><span class="chip">plugins</span><span class="chip">MCP</span><span class="chip">marketplaces</span><span class="chip">usage</span>
 </div>
-<div class="flow-arrow" aria-hidden="true">▼</div>
+<div class="flow-arrow" aria-hidden="true">→</div>
 <div class="flow-node hub"><span class="flow-name">Claudine</span><span class="flow-sub">one terminal interface</span></div>
-<div class="flow-arrow" aria-hidden="true">▼</div>
+<div class="flow-arrow" aria-hidden="true">→</div>
 <div class="flow-node you"><span class="flow-name">you</span><span class="flow-sub">in control</span></div>
 </div>
 </section>
