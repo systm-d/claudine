@@ -1,14 +1,135 @@
 +++
 [extra]
-tagline = "Manage your Claude Code data without leaving the terminal."
-lede = "Sessions, memory, configuration, extensions, usage stats and marketplaces — a Rust TUI that reads and writes ~/.claude safely."
+tagline = "Claude Code creates. Claudine keeps you in control."
+lede = "Claude Code fills ~/.claude every day — hundreds of sessions, memory, config, plugins, MCP servers, usage. Claudine is the companion app that lets you explore, understand and control all of it, from one terminal interface."
 cta = "View on GitHub"
 cta2 = "Install"
 +++
 
+<section class="flow-section">
+<p class="flow-kicker">Claude Code writes the knowledge. Claudine keeps control of it.</p>
+<div class="flow" aria-label="Claude Code feeds data into Claudine, which gives you one interface">
+<div class="flow-node src"><span class="flow-name">Claude Code</span><span class="flow-sub">writes to ~/.claude</span></div>
+<div class="flow-arrow" aria-hidden="true">▼</div>
+<div class="flow-chips">
+<span class="chip">sessions</span><span class="chip">memory</span><span class="chip">projects</span><span class="chip">config</span><span class="chip">plugins</span><span class="chip">MCP</span><span class="chip">marketplaces</span><span class="chip">usage</span>
+</div>
+<div class="flow-arrow" aria-hidden="true">▼</div>
+<div class="flow-node hub"><span class="flow-name">Claudine</span><span class="flow-sub">one terminal interface</span></div>
+<div class="flow-arrow" aria-hidden="true">▼</div>
+<div class="flow-node you"><span class="flow-name">you</span><span class="flow-sub">in control</span></div>
+</div>
+</section>
+
+<section class="why">
+<h2>Why Claudine exists</h2>
+<div class="why-grid">
+<div class="why-text">
+<p>Every session, Claude Code leaves things behind in <code>~/.claude</code>: transcripts named by UUID, a growing <code>settings.json</code>, memory files, hooks, plugins, MCP servers, marketplaces, backups and usage records.</p>
+<p>It piles up fast. After a few weeks it's hundreds of sessions across a dozen projects — none of them named after anything you'd recognize.</p>
+<p>The alternative is <code>cat</code>, <code>grep</code>, <code>jq</code> and a text editor, one file at a time, hoping you don't corrupt the JSON. Claudine is the dedicated app instead: it reads the whole tree, shows it in plain language, and writes back safely.</p>
+</div>
+<div class="term-window why-tree">
+<div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">~/.claude — without Claudine</span></div>
+<div class="term-body cmds">
+<div class="line dim">~/.claude</div>
+<div class="line dim">├── projects/</div>
+<div class="line dim">│   ├── -home-you-delfour-system/</div>
+<div class="line">│   │   ├── <span class="arg">a1b2c3d4</span>-9f…-0e11.jsonl <span class="cmt">← which one?</span></div>
+<div class="line">│   │   ├── <span class="arg">7f3e0c11</span>-2a…-77d3.jsonl</div>
+<div class="line">│   │   └── <span class="arg">2b9dd4a6</span>-c4…-9a10.jsonl</div>
+<div class="line dim">│   └── -home-you-dotfiles/  <span class="cmt">…</span></div>
+<div class="line dim">├── settings.json      <span class="cmt"># edit by hand?</span></div>
+<div class="line dim">├── CLAUDE.md</div>
+<div class="line dim">├── plugins/ · mcp/ · statsig/</div>
+<div class="line dim">└── …  <span class="cmt">128 sessions · 12 projects</span></div>
+</div>
+</div>
+</div>
+</section>
+
+<section class="missions">
+<h2>Six things it does for you</h2>
+<p class="section-lede">Not a list of buttons — the jobs you actually reach for.</p>
+<div class="grid">
+
+<div class="mission">
+<div class="mission-glyph" aria-hidden="true">⌕</div>
+<h3>Explore</h3>
+<p class="mission-line">Find any session instantly.</p>
+<ul>
+<li>Sessions listed by title, not UUID</li>
+<li>Live filter on name / path / id</li>
+<li>Full-text search inside conversations</li>
+<li>Every home at once, or one at a time</li>
+</ul>
+</div>
+
+<div class="mission">
+<div class="mission-glyph" aria-hidden="true">☰</div>
+<h3>Understand</h3>
+<p class="mission-line">Read conversations without the noise.</p>
+<ul>
+<li>Transcript with internal metadata stripped</li>
+<li>Tool calls and results summarized</li>
+<li>Condensed, human timestamps</li>
+<li><span class="kbd">a</span> reveals everything when you need it</li>
+</ul>
+</div>
+
+<div class="mission">
+<div class="mission-glyph" aria-hidden="true">⚙</div>
+<h3>Customize</h3>
+<p class="mission-line">Configure Claude Code, safely.</p>
+<ul>
+<li>Edit <code>settings.json</code> with atomic writes</li>
+<li>Timestamped backup before every change</li>
+<li>Read user memory (<code>CLAUDE.md</code>) in place</li>
+</ul>
+</div>
+
+<div class="mission">
+<div class="mission-glyph" aria-hidden="true">⧉</div>
+<h3>Extend</h3>
+<p class="mission-line">Manage plugins, hooks and MCP servers.</p>
+<ul>
+<li>Read hooks, plugins and MCP servers</li>
+<li>Toggle plugins on and off</li>
+<li>Add marketplaces, install from the catalog</li>
+</ul>
+</div>
+
+<div class="mission">
+<div class="mission-glyph" aria-hidden="true">⛨</div>
+<h3>Protect</h3>
+<p class="mission-line">Back up, restore and migrate.</p>
+<ul>
+<li>Signed <code>.tar.gz</code> export bundles</li>
+<li>Path remapping on import, with dry-run</li>
+<li>Secrets excluded automatically</li>
+<li>Recoverable trash — nothing gone for good</li>
+</ul>
+</div>
+
+<div class="mission">
+<div class="mission-glyph" aria-hidden="true">◔</div>
+<h3>Observe</h3>
+<p class="mission-line">Track usage and token cost.</p>
+<ul>
+<li>Tokens in / out / cache, per model</li>
+<li>Estimated cost per model family</li>
+<li>GitHub-style daily activity heatmap</li>
+<li>Per-session breakdown on demand</li>
+</ul>
+</div>
+
+</div>
+</section>
+
 <section class="preview">
-<h2>What it looks like</h2>
-<p class="section-lede">A fully keyboard-driven interface, right in your terminal — two example screens.</p>
+<h2>One interface, entirely at the keyboard</h2>
+<p class="section-lede">Two screens from the TUI — each doing one job.</p>
+<figure class="shot">
 <div class="term-window">
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">claudine — ~/.claude</span></div>
 <div class="term-body">
@@ -22,6 +143,9 @@ cta2 = "Install"
 </div>
 </div>
 </div>
+<figcaption>Explore — every session by name, across every home.</figcaption>
+</figure>
+<figure class="shot">
 <div class="term-window">
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">claudine — extensions</span></div>
 <div class="term-body">
@@ -35,27 +159,13 @@ cta2 = "Install"
 </div>
 </div>
 </div>
-</section>
-
-<section class="features">
-<h2>What Claudine does</h2>
-<div class="grid">
-<div class="card"><h3>Named sessions</h3><p>The list shows the session title, not the UUID — move and restore across all your homes.</p></div>
-<div class="card"><h3>Live search</h3><p>Filter by name / path / id as you type, then search inside content from 3 characters — snippets centered on the match.</p></div>
-<div class="card"><h3>Readable transcript</h3><p>The conversation without the internal noise; tool calls and results summarized; condensed timestamps.</p></div>
-<div class="card"><h3>Memory</h3><p>Read the user memory (CLAUDE.md) right in the terminal.</p></div>
-<div class="card"><h3>Configuration</h3><p>Edit settings.json with atomic writes and timestamped backups.</p></div>
-<div class="card"><h3>Extensions</h3><p>Hooks, MCP servers and plugins: read, edit, enable.</p></div>
-<div class="card"><h3>Marketplaces</h3><p>Add marketplaces and install plugins from the catalog.</p></div>
-<div class="card"><h3>Usage stats</h3><p>Tokens and estimated cost per model, plus a GitHub-style daily activity heatmap; per-session breakdown.</p></div>
-<div class="card"><h3>Import / Export</h3><p>Signed .tar.gz bundles, path remapping, dry-run, secret exclusion.</p></div>
-<div class="card"><h3>Self-update</h3><p><code>claudine update</code> fetches and installs the latest GitHub release for your platform.</p></div>
-</div>
+<figcaption>Extend — hooks, plugins and MCP servers in one view.</figcaption>
+</figure>
 </section>
 
 <section id="usage" class="usage">
-<h2>Commands</h2>
-<p class="section-lede">Running it bare launches the TUI; subcommands make everything scriptable.</p>
+<h2>Scriptable, too</h2>
+<p class="section-lede">Run it bare and it opens the TUI. Subcommands make the same power available to your scripts and CI.</p>
 <div class="term-window">
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">bash</span></div>
 <div class="term-body cmds">
@@ -74,7 +184,8 @@ cta2 = "Install"
 </section>
 
 <section id="install" class="install">
-<h2>Installation</h2>
+<h2>Install</h2>
+<p class="section-lede">Local-first and open source. It reads and writes only <code>~/.claude</code> — no account, no telemetry, no cloud.</p>
 <div class="term-window">
 <div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="term-title">install</span></div>
 <div class="term-body cmds">

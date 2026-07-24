@@ -1,6 +1,6 @@
 base_url = "https://systm-d.github.io/claudine"
 title = "Claudine"
-description = "Manage your Claude Code data without leaving the terminal."
+description = "The companion app for Claude Code. Explore, understand and control everything Claude Code writes to ~/.claude — from one terminal interface."
 default_language = "en"
 compile_sass = true
 build_search_index = false
@@ -12,7 +12,7 @@ highlight_code = false
 # Français servi sous /fr/ (l'anglais est à la racine).
 [languages.fr]
 title = "Claudine"
-description = "Gère tes données Claude Code, sans quitter le terminal."
+description = "L'application compagnon de Claude Code. Explore, comprends et contrôle tout ce que Claude Code écrit dans ~/.claude — depuis une seule interface terminal."
 
 [extra]
 brand_color = "#d97757"
