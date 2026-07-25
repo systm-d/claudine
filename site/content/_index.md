@@ -24,6 +24,12 @@ cta2 = "Install"
 
 <section class="why">
 <h2>Why Claudine exists</h2>
+<figure class="why-art">
+<picture>
+<source srcset="preview.webp" type="image/webp">
+<img src="preview.png" width="1200" height="800" alt="Claudine reading through your Claude Code history with a magnifying glass" loading="lazy">
+</picture>
+</figure>
 <div class="why-grid">
 <div class="why-text">
 <p>Every session, Claude Code leaves things behind in <code>~/.claude</code>: transcripts named by UUID, a growing <code>settings.json</code>, memory files, hooks, plugins, MCP servers, marketplaces, backups and usage records.</p>

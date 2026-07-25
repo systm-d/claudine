@@ -121,6 +121,13 @@ section > h2 { font-size: 1.6rem; letter-spacing: -0.01em; margin: 0 0 .4rem; }
 }
 
 /* ---------- Why Claudine exists ---------- */
+.why-art {
+  margin: .2rem auto 1.8rem; max-width: 30rem;
+}
+.why-art img {
+  display: block; width: 100%; height: auto;
+  filter: drop-shadow(0 20px 44px rgba(0, 0, 0, .5));
+}
 .why-grid {
   display: grid; gap: 1.6rem; align-items: start;
   grid-template-columns: 1fr 1fr;
