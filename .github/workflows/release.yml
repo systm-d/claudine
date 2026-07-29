@@ -75,7 +75,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/claudine.exe" "claudine-${{ matrix.name }}.exe"
 
       - name: Upload artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: claudine-${{ matrix.name }}
           path: |
@@ -102,7 +102,7 @@ jobs:
         run: cargo deb -p claudine
 
       - name: Upload artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: claudine-deb
           path: target/debian/*.deb
@@ -128,7 +128,7 @@ jobs:
         run: cargo generate-rpm -p crates/claudine
 
       - name: Upload artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: claudine-rpm
           path: target/generate-rpm/*.rpm
